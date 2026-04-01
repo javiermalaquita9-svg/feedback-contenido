@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, memo } from 'react';
 import { 
   Plus, 
   Link as LinkIcon, 
@@ -42,11 +42,20 @@ const getSafeDriveUrl = (url) => {
     const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
     
     if (match && match[1]) {
-      return `https://drive.google.com/file/d/${match[1]}/preview`;
+      return `https://drive.google.com/file/d/${match[1]}/embed`;
     }
     
     return url; 
   };
+
+const PLACEHOLDER_ICONS = {
+  video: <Video size={32} className="opacity-50" />,
+  image_lg: <ImageIcon size={32} className="opacity-50" />,
+  image_md: <ImageIcon size={24} className="opacity-50" />,
+  image_sm: <ImageIcon size={16} className="opacity-50" />,
+  smartphone: <Smartphone size={32} className="opacity-50" />,
+  gallery: <GalleryHorizontal size={32} className="opacity-50" />,
+};
 
 const getTodayString = () => new Date().toISOString().split('T')[0];
 
@@ -144,6 +153,21 @@ const INITIAL_PROJECTS = [
     pinnedCommentIds: []
   }
 ];
+
+const MemoizedMediaPreview = memo(({ url, title, placeholderIcon, placeholderText }) => {
+  const embedUrl = getSafeDriveUrl(url);
+  if (embedUrl) {
+    // Usamos una key única basada en la URL para forzar el re-montaje del iframe cuando la URL cambia
+    return <iframe key={embedUrl} src={embedUrl} className="w-full h-full border-0 absolute inset-0" allow="autoplay; fullscreen" title={title} referrerPolicy="no-referrer-when-downgrade"></iframe>;
+  }
+  return (
+    <div className="flex flex-col items-center justify-center p-2 text-center text-slate-400 h-full w-full absolute inset-0 bg-white">
+      {placeholderIcon}
+      <span className="text-slate-600 text-[8px] md:text-[10px] font-medium break-all mt-1">{placeholderText}</span>
+    </div>
+  );
+});
+MemoizedMediaPreview.displayName = 'MemoizedMediaPreview';
 
 export default function App() {
   const [role, setRole] = useState('admin');
@@ -559,19 +583,6 @@ export default function App() {
     setFormData(prev => ({ ...prev, carouselUrls: newUrls }));
   };
 
-  const renderMediaIframe = (url, title, placeholderIcon, placeholderText) => {
-    const embedUrl = getSafeDriveUrl(url);
-    if (embedUrl) {
-      return <iframe src={embedUrl} className="w-full h-full border-0 absolute inset-0" allow="autoplay; fullscreen" title={title} referrerPolicy="no-referrer-when-downgrade"></iframe>;
-    }
-    return (
-      <div className="flex flex-col items-center justify-center p-2 text-center text-slate-400 h-full w-full absolute inset-0 bg-white">
-        {placeholderIcon}
-        <span className="text-slate-600 text-[8px] md:text-[10px] font-medium break-all mt-1">{placeholderText}</span>
-      </div>
-    );
-  };
-
   // Determine which client's info to show in the global header
   let headerClient = null;
   if (role === 'cliente') {
@@ -841,14 +852,14 @@ export default function App() {
                     <div className="w-full flex justify-center">
                       
                       {formData.format === 'Reels/TikTok' && (
-                        <div className="flex flex-row items-center gap-6">
-                          <div className="flex flex-col items-center gap-2">
-                            <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Portada</span>
-                            <div className="relative w-28 aspect-9/16 bg-white rounded-xl border-4 border-slate-300 shadow-lg overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(formData.coverUrl, "Portada", <ImageIcon size={24} className="opacity-50" />, "Sin Portada")}</div>
-                          </div>
+                        <div className="flex flex-col items-center gap-6">
                           <div className="flex flex-col items-center gap-3">
                             <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
-                            <div className="relative w-48 aspect-9/16 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(formData.mediaUrl, "Preview", <Video size={32} className="opacity-50" />, "Sin Pieza")}</div>
+                            <div className="relative w-48 aspect-9/16 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"><MemoizedMediaPreview url={formData.mediaUrl} title="Preview" placeholderIcon={PLACEHOLDER_ICONS.video} placeholderText="Sin Pieza" /></div>
+                          </div>
+                          <div className="flex flex-col items-center gap-2">
+                            <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Portada</span>
+                            <div className="relative w-32 aspect-9/16 bg-white rounded-xl border-4 border-slate-300 shadow-lg overflow-hidden flex flex-col items-center justify-center transition-all"><MemoizedMediaPreview url={formData.coverUrl} title="Portada" placeholderIcon={PLACEHOLDER_ICONS.image_md} placeholderText="Sin Portada" /></div>
                           </div>
                         </div>
                       )}
@@ -856,8 +867,8 @@ export default function App() {
                       {formData.format === 'Post' && (
                         <div className="flex flex-col items-center gap-3 w-full">
                           <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
-                          <div className="relative w-full max-w-xs aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">
-                            {renderMediaIframe(formData.mediaUrl, "Preview", <ImageIcon size={32} className="opacity-50" />, "Sin Pieza")}
+                          <div className="relative w-full max-w-lg aspect-video bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all">
+                            <MemoizedMediaPreview url={formData.mediaUrl} title="Preview" placeholderIcon={PLACEHOLDER_ICONS.image_lg} placeholderText="Sin Pieza" />
                           </div>
                         </div>
                       )}
@@ -865,8 +876,8 @@ export default function App() {
                       {formData.format === 'Story' && (
                         <div className="flex flex-col items-center gap-3">
                           <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
-                          <div className="relative w-48 aspect-9/16 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">
-                            {renderMediaIframe(formData.mediaUrl, "Preview", <Smartphone size={32} className="opacity-50" />, "Sin Pieza")}
+                          <div className="relative w-48 aspect-9/16 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all">
+                            <MemoizedMediaPreview url={formData.mediaUrl} title="Preview" placeholderIcon={PLACEHOLDER_ICONS.smartphone} placeholderText="Sin Pieza" />
                           </div>
                         </div>
                       )}
@@ -875,7 +886,7 @@ export default function App() {
                         <div className="flex flex-col items-center gap-6 w-full">
                           <div className="flex flex-col items-center gap-3 w-full">
                             <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza 1</span>
-                            <div className="relative w-full max-w-xs aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(formData.carouselUrls[0], "Preview", <GalleryHorizontal size={32} className="opacity-50" />, "Sin Pieza 1")}</div>
+                            <div className="relative w-full max-w-lg aspect-video bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"><MemoizedMediaPreview url={formData.carouselUrls[0]} title="Preview" placeholderIcon={PLACEHOLDER_ICONS.gallery} placeholderText="Sin Pieza 1" /></div>
                           </div>
                           
                           {formData.carouselUrls.length > 1 && (
@@ -884,7 +895,7 @@ export default function App() {
                                 <div key={idx} className="flex flex-col items-center gap-1.5 shrink-0">
                                   <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Pieza {idx + 2}</span>
                                   <div className="relative w-24 aspect-4/5 bg-white rounded-lg border-2 border-slate-300 shadow-sm overflow-hidden flex flex-col items-center justify-center transition-all">
-                                    {renderMediaIframe(url, `Pieza ${idx + 2}`, <ImageIcon size={16} className="opacity-50" />, `Sin Pieza ${idx + 2}`)}
+                                    <MemoizedMediaPreview url={url} title={`Pieza ${idx + 2}`} placeholderIcon={PLACEHOLDER_ICONS.image_sm} placeholderText={`Sin Pieza ${idx + 2}`} />
                                   </div>
                                 </div>
                               ))}
@@ -1015,16 +1026,16 @@ export default function App() {
                           <div className="w-full bg-slate-50 p-6 md:p-8 flex flex-col items-center justify-center gap-6 relative overflow-hidden border-b border-slate-200">
                             
                             {selectedProject.format === 'Reels/TikTok' && (
-                              <div className="flex flex-col md:flex-row items-center gap-6">
-                                <div className="flex flex-col items-center gap-2">
-                                  <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Portada</span>
-                                  <div className="relative w-32 aspect-9/16 bg-white rounded-xl border-4 border-slate-300 shadow-lg overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(selectedProject.coverUrl, "Portada", <ImageIcon size={24} className="opacity-50" />, "Sin Portada")}</div>
-                                </div>
+                              <div className="flex flex-col items-center gap-6">
                                 <div className="flex flex-col items-center gap-3">
                                   <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
-                                  <div className="relative w-56 aspect-9/16 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">
-                                    {renderMediaIframe(selectedProject.mediaUrl, "Preview", <Video size={32} className="opacity-50" />, "Sin Pieza")}
+                                  <div className="relative w-56 aspect-9/16 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all">
+                                    <MemoizedMediaPreview url={selectedProject.mediaUrl} title="Preview" placeholderIcon={PLACEHOLDER_ICONS.video} placeholderText="Sin Pieza" />
                                   </div>
+                                </div>
+                                <div className="flex flex-col items-center gap-2">
+                                  <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Portada</span>
+                                  <div className="relative w-40 aspect-9/16 bg-white rounded-xl border-4 border-slate-300 shadow-lg overflow-hidden flex flex-col items-center justify-center transition-all"><MemoizedMediaPreview url={selectedProject.coverUrl} title="Portada" placeholderIcon={PLACEHOLDER_ICONS.image_md} placeholderText="Sin Portada" /></div>
                                 </div>
                               </div>
                             )}
@@ -1032,15 +1043,15 @@ export default function App() {
                             {selectedProject.format === 'Post' && (
                               <div className="flex flex-col items-center gap-3 w-full">
                                 <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
-                                <div className="relative w-full max-w-sm aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(selectedProject.mediaUrl, "Preview", <ImageIcon size={32} className="opacity-50" />, "Sin Pieza")}</div>
+                                <div className="relative w-full max-w-lg aspect-video bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"><MemoizedMediaPreview url={selectedProject.mediaUrl} title="Preview" placeholderIcon={PLACEHOLDER_ICONS.image_lg} placeholderText="Sin Pieza" /></div>
                               </div>
                             )}
 
                             {selectedProject.format === 'Story' && (
                               <div className="flex flex-col items-center gap-3">
                                 <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
-                                <div className="relative w-56 aspect-9/16 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">
-                                  {renderMediaIframe(selectedProject.mediaUrl, "Preview", <Smartphone size={32} className="opacity-50" />, "Sin Pieza")}
+                                <div className="relative w-56 aspect-9/16 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all">
+                                  <MemoizedMediaPreview url={selectedProject.mediaUrl} title="Preview" placeholderIcon={PLACEHOLDER_ICONS.smartphone} placeholderText="Sin Pieza" />
                                 </div>
                               </div>
                             )}
@@ -1049,7 +1060,7 @@ export default function App() {
                               <div className="flex flex-col items-center gap-6 w-full">
                                 <div className="flex flex-col items-center gap-3 w-full">
                                   <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza 1</span>
-                                  <div className="relative w-full max-w-sm aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(selectedProject.carouselUrls?.[0], "Preview", <GalleryHorizontal size={32} className="opacity-50" />, "Sin Pieza 1")}</div>
+                                  <div className="relative w-full max-w-lg aspect-video bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"><MemoizedMediaPreview url={selectedProject.carouselUrls?.[0]} title="Preview" placeholderIcon={PLACEHOLDER_ICONS.gallery} placeholderText="Sin Pieza 1" /></div>
                                 </div>
                                 
                                 {(selectedProject.carouselUrls || []).length > 1 && (
@@ -1057,7 +1068,7 @@ export default function App() {
                                     {selectedProject.carouselUrls.slice(1).map((url, idx) => (
                                       <div key={idx} className="flex flex-col items-center gap-1.5 shrink-0">
                                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Pieza {idx + 2}</span>
-                                        <div className="relative w-32 aspect-4/5 bg-white rounded-lg border-2 border-slate-300 shadow-sm overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(url, `Pieza ${idx + 2}`, <ImageIcon size={16} className="opacity-50" />, `Sin Pieza ${idx + 2}`)}</div>
+                                        <div className="relative w-32 aspect-4/5 bg-white rounded-lg border-2 border-slate-300 shadow-sm overflow-hidden flex flex-col items-center justify-center transition-all"><MemoizedMediaPreview url={url} title={`Pieza ${idx + 2}`} placeholderIcon={PLACEHOLDER_ICONS.image_sm} placeholderText={`Sin Pieza ${idx + 2}`} /></div>
                                       </div>
                                     ))}
                                   </div>
