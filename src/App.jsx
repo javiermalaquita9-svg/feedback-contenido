@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Plus, 
   Link as LinkIcon, 
@@ -28,8 +28,6 @@ import {
   Key,
   ExternalLink
 } from 'lucide-react';
-import { db } from './firebase';
-import { collection, getDocs, addDoc } from "firebase/firestore"; 
 
 const STATUSES = {
   en_revision: { label: 'En Revisión', styles: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
@@ -37,14 +35,18 @@ const STATUSES = {
   publicado: { label: 'Publicado', styles: 'bg-blue-100 text-blue-700 border-blue-200' }
 };
 
-const getDriveEmbedUrl = (url) => {
-  if (!url || typeof url !== 'string') return null;
-  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
-  if (match && match[1]) {
-    return `https://drive.google.com/file/d/${match[1]}/embed`;
-  }
-  return null;
-};
+const getSafeDriveUrl = (url) => {
+    if (!url) return '';
+    
+    // Busca exactamente la estructura del ID de Drive sin importar lo que haya antes o después
+    const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    
+    if (match && match[1]) {
+      return `https://drive.google.com/file/d/${match[1]}/preview`;
+    }
+    
+    return url; 
+  };
 
 const getTodayString = () => new Date().toISOString().split('T')[0];
 
@@ -156,17 +158,18 @@ export default function App() {
   const [isClientDataSaved, setIsClientDataSaved] = useState(false);
 
   // Extraemos la info del primer cliente para inicializar el formulario de "Crear"
-  const initialClient = clients[0];
+  // Asegura que currentInitialClient siempre esté definido, incluso si clients es temporalmente vacío.
+  const currentInitialClient = clients.length > 0 ? clients[0] : { id: '', name: '', email: '', status: '', projectsCount: 0, config: DEFAULT_CONFIG };
 
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     copy: '',
-    clientId: initialClient.id,
-    objective: initialClient.config.objectives[0] || '',
+    clientId: currentInitialClient.id,
+    objective: currentInitialClient.config.objectives[0] || '',
     publishDate: getTodayString(),
     pillars: {},
-    format: initialClient.config.formats[0] || '',
+    format: currentInitialClient.config.formats[0] || '',
     mediaUrl: '',
     coverUrl: '',
     tags: [],
@@ -196,31 +199,8 @@ export default function App() {
   const [dragOverDate, setDragOverDate] = useState(null);
   const dragTimeoutRef = useRef(null);
 
-  // --- Carga de datos desde Firestore ---
-  useEffect(() => {
-    const fetchData = async () => {
-      // Cargar Clientes
-      const clientsSnapshot = await getDocs(collection(db, "clients"));
-      const clientsList = clientsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if (clientsList.length > 0) {
-        setClients(clientsList);
-        setEditingClientId(clientsList[0].id);
-      } else {
-        // Si no hay clientes, usamos los datos de MOCK para que la app no se rompa
-        setClients(MOCK_CLIENTS);
-      }
-
-      // Cargar Proyectos
-      const projectsSnapshot = await getDocs(collection(db, "projects"));
-      const projectsList = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setSavedProjects(projectsList.length > 0 ? projectsList : INITIAL_PROJECTS);
-    };
-
-    fetchData().catch(console.error);
-  }, []); // El array vacío asegura que esto se ejecute solo una vez al montar el componente
-
   // Referencias dinámicas basadas en el cliente seleccionado en el form o la configuración
-  const formClient = clients.find(c => c.id === formData.clientId) || clients[0];
+  const formClient = clients.find(c => c.id === formData.clientId) || currentInitialClient;
   const editingClient = clients.find(c => c.id === editingClientId) || clients[0];
   
   // Format Tabs calculation
@@ -260,37 +240,31 @@ export default function App() {
 
   const totalPillars = Object.values(formData.pillars).reduce((acc, curr) => acc + curr, 0);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     
     const newProject = {
+      id: generateId(),
       ...formData,
-      carouselUrls: formData.format === 'Carrusell' ? formData.carouselUrls : [],
       status: 'en_revision',
       createdAt: new Date().toISOString(), // Usar ISO para consistencia
       comments: [],
       pinnedCommentIds: []
     };
     
-    try {
-      const docRef = await addDoc(collection(db, "projects"), newProject);
-      setSavedProjects([{ id: docRef.id, ...newProject }, ...savedProjects]);
-      setIsSuccess(true);
-      setTimeout(() => setIsSuccess(false), 3000);
-    } catch (error) {
-      console.error("Error adding document: ", error);
-      alert("Hubo un error al guardar el proyecto.");
-    }
+    setSavedProjects([newProject, ...savedProjects]);
+    setIsSuccess(true);
+    setTimeout(() => setIsSuccess(false), 3000);
 
     setFormData({
       title: '',
       description: '',
       copy: '',
-      clientId: formClient.id,
-      objective: formClient.config.objectives[0] || '',
+      clientId: currentInitialClient.id, // Reset a los valores iniciales seguros para el cliente
+      objective: currentInitialClient.config.objectives[0] || '',
       publishDate: getTodayString(),
       pillars: {},
-      format: formClient.config.formats[0] || '',
+      format: currentInitialClient.config.formats[0] || '',
       mediaUrl: '',
       coverUrl: '',
       tags: [],
@@ -545,12 +519,6 @@ export default function App() {
     setClients(prev => prev.map(c => c.id === editingClientId ? { ...c, config: { ...c.config, quickLinks: c.config.quickLinks.filter((_, i) => i !== idx) } } : c));
   };
 
-  const handleCarouselUrlChange = (index, value) => {
-    const newUrls = [...formData.carouselUrls];
-    newUrls[index] = value;
-    setFormData(prev => ({ ...prev, carouselUrls: newUrls }));
-  };
-
   const handleCarouselLengthChange = (e) => {
     const length = parseInt(e.target.value, 10) || 1;
     const newUrls = [...formData.carouselUrls];
@@ -584,11 +552,17 @@ export default function App() {
     setIsClientDataSaved(true);
     setTimeout(() => setIsClientDataSaved(false), 2000);
   };
+  
+  const handleCarouselUrlChange = (index, value) => {
+    const newUrls = [...formData.carouselUrls];
+    newUrls[index] = value;
+    setFormData(prev => ({ ...prev, carouselUrls: newUrls }));
+  };
 
   const renderMediaIframe = (url, title, placeholderIcon, placeholderText) => {
-    const embedUrl = getDriveEmbedUrl(url);
+    const embedUrl = getSafeDriveUrl(url);
     if (embedUrl) {
-      return <iframe src={embedUrl} className="w-full h-full border-0 absolute inset-0" allow="autoplay; fullscreen" title={title}></iframe>;
+      return <iframe src={embedUrl} className="w-full h-full border-0 absolute inset-0" allow="autoplay; fullscreen" title={title} referrerPolicy="no-referrer-when-downgrade"></iframe>;
     }
     return (
       <div className="flex flex-col items-center justify-center p-2 text-center text-slate-400 h-full w-full absolute inset-0 bg-white">
@@ -800,7 +774,7 @@ export default function App() {
                             {formData.carouselUrls.map((url, idx) => (
                               <div key={idx}>
                                 <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><LinkIcon size={12} className="text-slate-400" /> Enlace Pieza {idx + 1}</label>
-                                <input type="url" value={url} onChange={e => handleCarouselUrlChange(idx, e.target.value)} placeholder="Drive url..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input type="url" value={url} onChange={e => handleCarouselUrlChange(idx, e.target.value)} placeholder="Enlace de Google Drive..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                               </div>
                             ))}
                           </div>
@@ -809,7 +783,7 @@ export default function App() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><LinkIcon size={12} className="text-slate-400" /> Enlace de Pieza Principal</label>
-                            <input type="url" name="mediaUrl" required value={formData.mediaUrl} onChange={handleInputChange} placeholder="Drive url..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            <input type="url" name="mediaUrl" required value={formData.mediaUrl} onChange={handleInputChange} placeholder="Enlace de Google Drive..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                           </div>
                           {formData.format === 'Reels/TikTok' && (
                             <div>
@@ -852,7 +826,7 @@ export default function App() {
                         {isSuccess ? (
                           <div className="flex items-center gap-1 text-green-600 text-xs font-medium"><CheckCircle2 size={16} /> Proyecto creado</div>
                         ) : (
-                          <span className="text-[10px] text-slate-400">Guarda datos locales</span>
+                          <span className="text-[10px] text-slate-400">Los datos se guardan localmente.</span>
                         )}
                         <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm"><Plus size={16} /> Crear</button>
                       </div>
@@ -870,15 +844,11 @@ export default function App() {
                         <div className="flex flex-row items-center gap-6">
                           <div className="flex flex-col items-center gap-2">
                             <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Portada</span>
-                            <div className="relative w-28 aspect-9/16 bg-white rounded-xl border-4 border-slate-300 shadow-lg overflow-hidden flex flex-col items-center justify-center transition-all">
-                              {renderMediaIframe(formData.coverUrl, "Portada", <ImageIcon size={24} className="opacity-50" />, "Sin Portada")}
-                            </div>
+                            <div className="relative w-28 aspect-9/16 bg-white rounded-xl border-4 border-slate-300 shadow-lg overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(formData.coverUrl, "Portada", <ImageIcon size={24} className="opacity-50" />, "Sin Portada")}</div>
                           </div>
                           <div className="flex flex-col items-center gap-3">
                             <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
-                            <div className="relative w-48 aspect-9/16 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">
-                              {renderMediaIframe(formData.mediaUrl, "Preview", <Video size={32} className="opacity-50" />, "Sin Pieza")}
-                            </div>
+                            <div className="relative w-48 aspect-9/16 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(formData.mediaUrl, "Preview", <Video size={32} className="opacity-50" />, "Sin Pieza")}</div>
                           </div>
                         </div>
                       )}
@@ -905,9 +875,7 @@ export default function App() {
                         <div className="flex flex-col items-center gap-6 w-full">
                           <div className="flex flex-col items-center gap-3 w-full">
                             <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-slate-50 shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza 1</span>
-                            <div className="relative w-full max-w-xs aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">
-                              {renderMediaIframe(formData.carouselUrls[0], "Preview", <GalleryHorizontal size={32} className="opacity-50" />, "Sin Pieza 1")}
-                            </div>
+                            <div className="relative w-full max-w-xs aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(formData.carouselUrls[0], "Preview", <GalleryHorizontal size={32} className="opacity-50" />, "Sin Pieza 1")}</div>
                           </div>
                           
                           {formData.carouselUrls.length > 1 && (
@@ -984,9 +952,9 @@ export default function App() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                       {filteredProjects.map(project => (
                         <div key={project.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md hover:border-indigo-200">
-                          {getDriveEmbedUrl(project.format === 'Carrusell' ? project.carouselUrls[0] : project.mediaUrl) && (
+                          {(project.format === 'Carrusell' ? project.carouselUrls?.[0] : project.mediaUrl) && (
                             <div className="w-full aspect-video bg-white border-b border-slate-200 relative">
-                              <iframe src={getDriveEmbedUrl(project.format === 'Carrusell' ? project.carouselUrls[0] : project.mediaUrl)} className="absolute top-0 left-0 w-full h-full border-0 pointer-events-none" title={project.title}></iframe>
+                              <iframe src={getSafeDriveUrl(project.format === 'Carrusell' ? project.carouselUrls?.[0] : project.mediaUrl)} className="absolute top-0 left-0 w-full h-full border-0 pointer-events-none" title={project.title}></iframe>
                               <div className="absolute inset-0 bg-transparent z-10"></div>
                             </div>
                           )}
@@ -1050,9 +1018,7 @@ export default function App() {
                               <div className="flex flex-col md:flex-row items-center gap-6">
                                 <div className="flex flex-col items-center gap-2">
                                   <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Portada</span>
-                                  <div className="relative w-32 aspect-9/16 bg-white rounded-xl border-4 border-slate-300 shadow-lg overflow-hidden flex flex-col items-center justify-center transition-all">
-                                    {renderMediaIframe(selectedProject.coverUrl, "Portada", <ImageIcon size={24} className="opacity-50" />, "Sin Portada")}
-                                  </div>
+                                  <div className="relative w-32 aspect-9/16 bg-white rounded-xl border-4 border-slate-300 shadow-lg overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(selectedProject.coverUrl, "Portada", <ImageIcon size={24} className="opacity-50" />, "Sin Portada")}</div>
                                 </div>
                                 <div className="flex flex-col items-center gap-3">
                                   <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
@@ -1066,9 +1032,7 @@ export default function App() {
                             {selectedProject.format === 'Post' && (
                               <div className="flex flex-col items-center gap-3 w-full">
                                 <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza Principal</span>
-                                <div className="relative w-full max-w-sm aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">
-                                  {renderMediaIframe(selectedProject.mediaUrl, "Preview", <ImageIcon size={32} className="opacity-50" />, "Sin Pieza")}
-                                </div>
+                                <div className="relative w-full max-w-sm aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(selectedProject.mediaUrl, "Preview", <ImageIcon size={32} className="opacity-50" />, "Sin Pieza")}</div>
                               </div>
                             )}
 
@@ -1085,9 +1049,7 @@ export default function App() {
                               <div className="flex flex-col items-center gap-6 w-full">
                                 <div className="flex flex-col items-center gap-3 w-full">
                                   <span className="text-slate-500 text-xs font-bold uppercase tracking-wider bg-white shadow-sm border border-slate-200 px-3 py-1 rounded-full">Pieza 1</span>
-                                  <div className="relative w-full max-w-sm aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">
-                                    {renderMediaIframe(selectedProject.carouselUrls?.[0], "Preview", <GalleryHorizontal size={32} className="opacity-50" />, "Sin Pieza 1")}
-                                  </div>
+                                  <div className="relative w-full max-w-sm aspect-4/5 bg-white rounded-2xl border-4 border-slate-300 shadow-xl overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(selectedProject.carouselUrls?.[0], "Preview", <GalleryHorizontal size={32} className="opacity-50" />, "Sin Pieza 1")}</div>
                                 </div>
                                 
                                 {(selectedProject.carouselUrls || []).length > 1 && (
@@ -1095,9 +1057,7 @@ export default function App() {
                                     {selectedProject.carouselUrls.slice(1).map((url, idx) => (
                                       <div key={idx} className="flex flex-col items-center gap-1.5 shrink-0">
                                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Pieza {idx + 2}</span>
-                                        <div className="relative w-32 aspect-4/5 bg-white rounded-lg border-2 border-slate-300 shadow-sm overflow-hidden flex flex-col items-center justify-center transition-all">
-                                          {renderMediaIframe(url, `Pieza ${idx + 2}`, <ImageIcon size={16} className="opacity-50" />, `Sin Pieza ${idx + 2}`)}
-                                        </div>
+                                        <div className="relative w-32 aspect-4/5 bg-white rounded-lg border-2 border-slate-300 shadow-sm overflow-hidden flex flex-col items-center justify-center transition-all">{renderMediaIframe(url, `Pieza ${idx + 2}`, <ImageIcon size={16} className="opacity-50" />, `Sin Pieza ${idx + 2}`)}</div>
                                       </div>
                                     ))}
                                   </div>
