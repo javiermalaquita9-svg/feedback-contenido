@@ -24,10 +24,10 @@ import {
   Settings,
   Hash,
   Users,
-  Key,
   ExternalLink
 } from 'lucide-react';
-import { auth } from './firebase'; // Importa solo auth
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { auth, db } from './firebase'; 
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
 
 const STATUSES = {
@@ -219,20 +219,46 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // Lógica simple para determinar el rol. En una app real, esto podría venir de Firestore.
+        // Asigna el rol y filtra por cliente si no es admin
         if (currentUser.email === 'wong.luiggi@gmail.com') { // <-- ¡IMPORTANTE! Cambia esto por tu email de administrador
           setRole('admin');
+          setFilterClientId('all'); // El admin ve todo por defecto
         } else {
           setRole('cliente');
+          const clientData = clients.find(c => c.email === currentUser.email);
+          if (clientData) {
+            setFilterClientId(clientData.id); // Filtra para mostrar solo los datos de este cliente
+          } else {
+            setFilterClientId(null); // Si no se encuentra el cliente, no muestra nada
+          }
+          setCurrentView('contenido'); // Asegura que el cliente siempre empiece en la vista de contenido
         }
       } else {
+        // Limpia el estado al cerrar sesión
         setRole(null);
+        setFilterClientId('all');
       }
       setAuthLoading(false);
     });
 
     // Limpiar el listener al desmontar el componente
     return () => unsubscribe();
+  }, [clients]); // Se añade `clients` como dependencia para que se re-evalúe si cambian los clientes
+
+// --- Efecto para traer piezas en TIEMPO REAL desde Firebase ---
+  useEffect(() => {
+    // Escucha la colección "projects" en tu base de datos
+    const unsubscribeProjects = onSnapshot(collection(db, "projects"), (snapshot) => {
+      const proyectosFirebase = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Si hay datos en Firebase, los usamos. Si está vacío, no hace nada y espera.
+      if (proyectosFirebase.length > 0) {
+        setSavedProjects(proyectosFirebase);
+      }
+    });
+
+    // Limpiar el listener al desmontar
+    return () => unsubscribeProjects();
   }, []);
 
   const handleLogin = async (e) => {
@@ -305,64 +331,85 @@ export default function App() {
     });
   };
 
-  const handleSubmit = (e) => {
+ const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log("Botón presionado, iniciando guardado...");
 
-    if (editingProject) {
-      setSavedProjects(prev => prev.map(p => 
-        p.id === editingProject.id ? { ...p, ...formData } : p
-      ));
-      setEditingProject(null);
-      setCurrentView('contenido');
-    } else {
-      const newProject = {
-        id: generateId(),
-        ...formData,
-        status: 'en_revision',
-        createdAt: new Date().toISOString(),
-        comments: [],
-        pinnedCommentIds: []
-      };
-      setSavedProjects(prev => [newProject, ...prev]);
-    }
-    setIsSuccess(true);
-    setTimeout(() => setIsSuccess(false), 3000);
-    resetForm();
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    alert("¡Enlace copiado al portapapeles!");
-  };
-
-  const handleAddComment = () => {
-    if (!newComment.trim() || !selectedProjectId) return;
-
-    const updatedProjects = savedProjects.map(p => {
-      if (p.id === selectedProjectId) {
-        return {
-          ...p,
-          comments: [
-            ...(p.comments || []), 
-            { 
-              id: generateId(), 
-              text: newComment, 
-              date: new Date().toLocaleString(),
-              author: role === 'admin' ? 'Administrador' : 'Cliente'
-            }
-          ]
+    try {
+      if (editingProject) {
+        const projectRef = doc(db, "projects", editingProject.id);
+        await updateDoc(projectRef, formData);
+        setEditingProject(null);
+        setCurrentView('contenido');
+      } else {
+        const newId = generateId(); 
+        const newProject = {
+          id: newId,
+          ...formData,
+          status: 'en_revision',
+          createdAt: new Date().toISOString(),
+          comments: [],
+          pinnedCommentIds: []
         };
+        console.log("Enviando estos datos a Firebase:", newProject);
+        
+        await setDoc(doc(db, "projects", newId), newProject);
       }
-      return p;
-    });
+      
+      setIsSuccess(true);
+      setTimeout(() => setIsSuccess(false), 3000);
+      resetForm();
+      console.log("¡Guardado exitoso!");
+      
+    } catch (error) {
+      console.error("🔥 ERROR AL GUARDAR EN FIREBASE:", error);
+      alert("No se pudo guardar. Presiona F12 y revisa la pestaña 'Consola' para ver el error exacto.");
+    }
+  };
 
-    setSavedProjects(updatedProjects);
-    setNewComment('');
+const handleAddComment = async () => {
+    console.log("1. Botón enviar presionado. Texto:", newComment);
+    console.log("2. ID del proyecto seleccionado:", selectedProjectId);
+
+    if (!newComment.trim() || !selectedProjectId) {
+      console.log("❌ Cancelado: El comentario está vacío o no hay proyecto seleccionado.");
+      return;
+    }
+
+    try {
+      const project = savedProjects.find(p => p.id === selectedProjectId);
+      if (!project) {
+        console.error("❌ Error: No se encontró el proyecto en la memoria de la app.");
+        return;
+      }
+
+      const nuevoComentario = { 
+        id: generateId(), 
+        text: newComment, 
+        date: new Date().toLocaleString(),
+        author: role === 'admin' ? 'Administrador' : 'Cliente'
+      };
+      
+      console.log("3. Paquete de comentario armado:", nuevoComentario);
+
+      // Enviando a Firebase
+      const projectRef = doc(db, "projects", selectedProjectId);
+      await updateDoc(projectRef, {
+        comments: [...(project.comments || []), nuevoComentario]
+      });
+
+      console.log("✅ ¡Comentario guardado en Firebase con éxito!");
+      setNewComment(''); // Limpiamos la caja de texto
+
+    } catch (error) {
+      console.error("🔥 ERROR AL GUARDAR COMENTARIO EN FIREBASE:", error);
+      alert("Hubo un error al enviar el comentario. Presiona F12 y revisa la consola.");
+    }
   };
 
   const filteredProjects = savedProjects.filter(project => 
     project.format === activeTab && 
-    (filterClientId === 'all' || project.clientId === filterClientId || role === 'cliente') &&
+    (filterClientId === 'all' || project.clientId === filterClientId) &&
     (filterMonth === 'all' || project.publishDate.startsWith(filterMonth))
   );
 
@@ -391,28 +438,42 @@ export default function App() {
     setIsEditingCopy(false);
   };
 
-  const handlePinComment = (projectId, commentId) => {
-    setSavedProjects(prev => prev.map(p => {
-      if (p.id === projectId) {
-        const pinned = p.pinnedCommentIds || [];
-        if (pinned.includes(commentId)) {
-          return { ...p, pinnedCommentIds: pinned.filter(id => id !== commentId) };
-        } else {
-          if (pinned.length >= 3) {
-            alert('Máximo 3 correcciones fijadas permitidas.');
-            return p;
-          }
-          return { ...p, pinnedCommentIds: [...pinned, commentId] };
+const handlePinComment = async (projectId, commentId) => {
+    try {
+      const project = savedProjects.find(p => p.id === projectId);
+      if (!project) return;
+
+      let pinned = project.pinnedCommentIds || [];
+
+      // Lógica de fijar/desfijar
+      if (pinned.includes(commentId)) {
+        // Si ya tiene pin, se lo quitamos
+        pinned = pinned.filter(id => id !== commentId);
+      } else {
+        // Si no tiene pin, se lo ponemos (con límite de 3)
+        if (pinned.length >= 3) {
+          alert('Máximo 3 correcciones fijadas permitidas por pieza.');
+          return;
         }
+        pinned = [...pinned, commentId];
       }
-      return p;
-    }));
+
+      // 🚀 Enviamos la actualización a Firebase
+      const projectRef = doc(db, "projects", projectId);
+      await updateDoc(projectRef, { 
+        pinnedCommentIds: pinned 
+      });
+
+    } catch (error) {
+      console.error("🔥 ERROR AL FIJAR LA CORRECCIÓN:", error);
+      alert("Hubo un error al fijar la corrección. Revisa tu conexión.");
+    }
   };
 
-  const handleStatusChange = (projectId, newStatus) => {
-    setSavedProjects(prev => prev.map(p => 
-      p.id === projectId ? { ...p, status: newStatus } : p
-    ));
+ const handleStatusChange = async (projectId, newStatus) => {
+    // Actualiza solo el campo 'status' en la base de datos
+    const projectRef = doc(db, "projects", projectId);
+    await updateDoc(projectRef, { status: newStatus });
   };
 
   const navigateTo = (view) => {
@@ -437,9 +498,11 @@ export default function App() {
     }
   };
 
-  const handleRemoveProject = (projectId) => {
+  const handleRemoveProject = async (projectId) => {
     if (window.confirm('¿Estás seguro de que quieres eliminar esta pieza de contenido?')) {
-      setSavedProjects(prev => prev.filter(p => p.id !== projectId));
+      // Borra el documento directamente de Firebase
+      await deleteDoc(doc(db, "projects", projectId));
+      
       if (selectedProjectId === projectId) {
         setSelectedProjectId(null);
       }
@@ -644,6 +707,28 @@ export default function App() {
     setTimeout(() => setIsClientDataSaved(false), 2000);
   };
 
+  const handleAddNewClient = () => {
+    const maxId = clients.reduce((max, c) => {
+      const idNum = parseInt(c.id.split('_')[1]);
+      return idNum > max ? idNum : max;
+    }, 0);
+
+    const newClientId = `cli_${maxId + 1}`;
+    
+    const newClient = {
+      id: newClientId,
+      name: `Nuevo Cliente ${maxId + 1}`,
+      email: `cliente${maxId + 1}@example.com`,
+      status: 'Inactivo',
+      projectsCount: 0,
+      config: { ...DEFAULT_CONFIG }
+    };
+
+    setClients(prevClients => [...prevClients, newClient]);
+    setEditingClientId(newClientId); // Set the new client as the one being edited
+    navigateTo('configuracion'); // Navigate to the configuration view for the new client
+  };
+
   const handleCancelEdit = () => {
     setEditingProject(null);
     resetForm();
@@ -652,14 +737,14 @@ export default function App() {
 
   const projectMonths = [...new Set(savedProjects.map(p => p.publishDate.substring(0, 7)))].sort((a, b) => b.localeCompare(a));
   let headerClient = null;
-  if (role === 'cliente') {
-    headerClient = clients[0]; // Simulación del cliente que ha iniciado sesión
-  } else if (currentView === 'configuracion') {
+  if (role === 'cliente') { // Para un cliente, siempre mostramos su propia información
+    headerClient = clients.find(c => c.id === filterClientId);
+  } else if (currentView === 'configuracion') { // Para admin, depende de la vista
     headerClient = editingClient;
   } else if (currentView === 'crear') {
     headerClient = formClient;
   } else if (filterClientId !== 'all') {
-    headerClient = clients.find(c => c.id === filterClientId);
+    headerClient = clients.find(c => c.id === filterClientId); // En contenido o calendario
   }
   const headerConfig = headerClient?.config;
 
@@ -667,6 +752,38 @@ export default function App() {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50">
         <p className="text-slate-500">Cargando aplicación...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-100">
+        <div className="w-full max-w-sm p-8 bg-white rounded-2xl shadow-lg border border-slate-200">
+          <h1 className="text-xl font-bold text-center text-slate-800 mb-6">Iniciar Sesión</h1>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Correo Electrónico</label>
+              <input 
+                type="email" 
+                value={loginEmail} 
+                onChange={(e) => setLoginEmail(e.target.value)} 
+                placeholder="tu@correo.com"
+                className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Contraseña</label>
+              <input 
+                type="password" 
+                value={loginPassword} 
+                onChange={(e) => setLoginPassword(e.target.value)} 
+                className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Entrar</button>
+          </form>
+        </div>
       </div>
     );
   }
@@ -1327,7 +1444,10 @@ export default function App() {
 
                 <div className="grid grid-cols-7 flex-1 auto-rows-fr">
                   {calendarDays.map(({ day, dateStr, isCurrentMonth }) => {
-                    const dayProjects = savedProjects.filter(p => p.publishDate === dateStr);
+                    const dayProjects = savedProjects.filter(p => 
+                      p.publishDate === dateStr &&
+                      (filterClientId === 'all' || p.clientId === filterClientId)
+                    );
                     const isToday = dateStr === getTodayString();
 
                     return (
@@ -1496,9 +1616,9 @@ export default function App() {
                 <div className="lg:col-span-2 space-y-6">
                   <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                      <h2 className="font-bold text-slate-800 flex items-center gap-2"><Users size={18} className="text-indigo-600"/> Clientes Activos</h2>
-                      <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm">
-                        <Plus size={14}/> Nuevo Cliente
+                      <h2 className="font-bold text-slate-800 flex items-center gap-2"><Users size={18} className="text-indigo-600" /> Clientes Activos</h2>
+                      <button onClick={handleAddNewClient} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm">
+                        <Plus size={14} /> Nuevo Cliente
                       </button>
                     </div>
                     <div className="divide-y divide-slate-100">
@@ -1518,12 +1638,6 @@ export default function App() {
                             <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${client.status === 'Activo' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{client.status}</span>
                             
                             <div className="flex items-center gap-1 border-l border-slate-200 pl-4 ml-2">
-                              <button onClick={() => copyToClipboard(`https://tuapp.com/acceso/${client.id}-token-secreto`)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Copiar Enlace Mágico">
-                                <Key size={16}/>
-                              </button>
-                              <button onClick={() => { setEditingClientId(client.id); navigateTo('configuracion'); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Configurar Cliente">
-                                <Settings size={16}/>
-                              </button>
                               <button onClick={() => { setFilterClientId(client.id); navigateTo('contenido'); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Ver espacio de trabajo">
                                 <ExternalLink size={16}/>
                               </button>

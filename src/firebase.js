@@ -1,8 +1,9 @@
 // Import the functions you need from the SDKs you need
+// Agrega esta importación arriba
+import { getFirestore } from "firebase/firestore";
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth"; // Importa getAuth para autenticación
-import { getFirestore } from "firebase/firestore"; // Importa getFirestore para la base de datos
 import { getStorage } from "firebase/storage"; // Importa getStorage para el almacenamiento de archivos
 
 // TODO: Add SDKs for Firebase products that you want to use
