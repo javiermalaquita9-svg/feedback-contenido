@@ -9,7 +9,7 @@ import {
   CheckCircle2,
   Play,
   FolderOpen,
-  MessageSquare,
+  MessageSquare,  
   ArrowLeft,
   Send,
   Edit2,
@@ -17,9 +17,8 @@ import {
   X,
   Copy as CopyIcon,
   Calendar as CalendarIcon,
-  ChevronLeft,
+  ChevronLeft,  
   ChevronRight,
-  GalleryHorizontal,
   Pin,
   Tag,
   Settings,
@@ -35,6 +34,25 @@ const STATUSES = {
   en_revision: { label: 'En Revisión', styles: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
   listo: { label: 'Listo', styles: 'bg-green-100 text-green-700 border-green-200' },
   publicado: { label: 'Publicado', styles: 'bg-blue-100 text-blue-700 border-blue-200' }
+};
+
+const OBJECTIVE_COLORS = {
+  'Diferenciación': {
+    styles: 'bg-purple-100 text-purple-700 border-purple-200',
+    calendarBorder: 'border-purple-500'
+  },
+  'Alcance / Recurrencia': {
+    styles: 'bg-teal-100 text-teal-700 border-teal-200',
+    calendarBorder: 'border-teal-500'
+  },
+  'Autoridad / Sostenibilidad': {
+    styles: 'bg-sky-100 text-sky-700 border-sky-200',
+    calendarBorder: 'border-sky-500'
+  },
+  'default': {
+    styles: 'bg-slate-100 text-slate-700 border-slate-200',
+    calendarBorder: 'border-slate-500'
+  }
 };
 
 const getTodayString = () => new Date().toISOString().split('T')[0];
@@ -138,6 +156,7 @@ export default function App() {
   // Estados de autenticación y rol
   const [user, setUser] = useState(null); // Almacena el objeto de usuario de Firebase
   const [role, setRole] = useState(null); // 'admin' o 'cliente'
+  const [editingProject, setEditingProject] = useState(null);
   const [authLoading, setAuthLoading] = useState(true); // Para mostrar un loader mientras se verifica la sesión
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -146,6 +165,7 @@ export default function App() {
   const [clients, setClients] = useState(INITIAL_CLIENTS);
   const [editingClientId, setEditingClientId] = useState(INITIAL_CLIENTS[0].id);
 
+  const [newTag, setNewTag] = useState('');
   const [newConfigItems, setNewConfigItems] = useState({ pillars: '', objectives: '', tags: '', formats: '' });
   const [newQuickLink, setNewQuickLink] = useState({ name: '', url: '' });
   const [newSocialLink, setNewSocialLink] = useState({ name: '', url: '' });
@@ -176,6 +196,7 @@ export default function App() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [currentView, setCurrentView] = useState('contenido');
   const [rawActiveTab, setActiveTab] = useState('Reels/TikTok');
+  const [filterMonth, setFilterMonth] = useState('all');
   const [filterClientId, setFilterClientId] = useState('all');
   
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -265,27 +286,12 @@ export default function App() {
     }));
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    const newProject = {
-      id: generateId(),
-      ...formData,
-      status: 'en_revision',
-      createdAt: new Date().toISOString(), // Usar ISO para consistencia
-      comments: [],
-      pinnedCommentIds: []
-    };
-    
-    setSavedProjects(prev => [newProject, ...prev]);
-    setIsSuccess(true);
-    setTimeout(() => setIsSuccess(false), 3000);
-
+  const resetForm = () => {
     setFormData({
       title: '',
       description: '',
       copy: '',
-      clientId: currentInitialClient.id, // Reset a los valores iniciales seguros para el cliente
+      clientId: currentInitialClient.id,
       objective: currentInitialClient.config.objectives[0] || '',
       publishDate: getTodayString(),
       pillars: {},
@@ -297,6 +303,31 @@ export default function App() {
       carouselLength: 2,
       carouselUrls: ['', '']
     });
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    if (editingProject) {
+      setSavedProjects(prev => prev.map(p => 
+        p.id === editingProject.id ? { ...p, ...formData } : p
+      ));
+      setEditingProject(null);
+      setCurrentView('contenido');
+    } else {
+      const newProject = {
+        id: generateId(),
+        ...formData,
+        status: 'en_revision',
+        createdAt: new Date().toISOString(),
+        comments: [],
+        pinnedCommentIds: []
+      };
+      setSavedProjects(prev => [newProject, ...prev]);
+    }
+    setIsSuccess(true);
+    setTimeout(() => setIsSuccess(false), 3000);
+    resetForm();
   };
 
   const copyToClipboard = (text) => {
@@ -331,7 +362,8 @@ export default function App() {
 
   const filteredProjects = savedProjects.filter(project => 
     project.format === activeTab && 
-    (filterClientId === 'all' || project.clientId === filterClientId || role === 'cliente')
+    (filterClientId === 'all' || project.clientId === filterClientId || role === 'cliente') &&
+    (filterMonth === 'all' || project.publishDate.startsWith(filterMonth))
   );
 
   const selectedProject = savedProjects.find(p => p.id === selectedProjectId);
@@ -386,12 +418,32 @@ export default function App() {
   const navigateTo = (view) => {
     setCurrentView(view);
     setSelectedProjectId(null);
+    setEditingProject(null);
     setIsEditingCopy(false);
   };
 
   const openProjectDetail = (projectId) => {
     setSelectedProjectId(projectId);
+    setEditingProject(null);
     setCurrentView('contenido'); 
+  };
+
+  const handleEditProject = (projectId) => {
+    const projectToEdit = savedProjects.find(p => p.id === projectId);
+    if (projectToEdit) {
+      setEditingProject(projectToEdit);
+      setFormData({ ...projectToEdit });
+      setCurrentView('crear');
+    }
+  };
+
+  const handleRemoveProject = (projectId) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar esta pieza de contenido?')) {
+      setSavedProjects(prev => prev.filter(p => p.id !== projectId));
+      if (selectedProjectId === projectId) {
+        setSelectedProjectId(null);
+      }
+    }
   };
 
   // --- Lógica del Calendario ---
@@ -534,6 +586,19 @@ export default function App() {
     );
   };
 
+  const handleAddTag = () => {
+    const trimmedTag = newTag.trim();
+    if (trimmedTag && !formClient.config.tags.includes(trimmedTag)) {
+      setClients(prevClients => prevClients.map(c => 
+        c.id === formClient.id 
+          ? { ...c, config: { ...c.config, tags: [...c.config.tags, trimmedTag] } } 
+          : c
+      ));
+      setFormData(prev => ({ ...prev, tags: [...prev.tags, trimmedTag] }));
+      setNewTag('');
+    }
+  };
+
   const handleAddQuickLink = () => {
     if (newQuickLink.name.trim() && newQuickLink.url.trim()) {
       setClients(prev => prev.map(c => c.id === editingClientId ? { ...c, config: { ...c.config, quickLinks: [...(c.config.quickLinks || []), newQuickLink] } } : c));
@@ -578,6 +643,14 @@ export default function App() {
     setIsClientDataSaved(true);
     setTimeout(() => setIsClientDataSaved(false), 2000);
   };
+
+  const handleCancelEdit = () => {
+    setEditingProject(null);
+    resetForm();
+    setCurrentView('contenido');
+  };
+
+  const projectMonths = [...new Set(savedProjects.map(p => p.publishDate.substring(0, 7)))].sort((a, b) => b.localeCompare(a));
   let headerClient = null;
   if (role === 'cliente') {
     headerClient = clients[0]; // Simulación del cliente que ha iniciado sesión
@@ -729,50 +802,55 @@ export default function App() {
         {/* VISTA: CREAR */}
         {currentView === 'crear' && role === 'admin' && (
           <div className="p-6 md:p-8 lg:p-12">
-            <div className="max-w-7xl mx-auto">
+            <div className="max-w-full mx-auto">
               <div className="mb-6">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">Crear Nueva Revisión</h1>
-                <p className="text-sm text-slate-500 mt-1">Sube los enlaces de Drive y asigna fechas para el calendario.</p>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                  {editingProject ? 'Editar Pieza de Contenido' : 'Crear Nueva Revisión'}
+                </h1>
+                <p className="text-sm text-slate-500 mt-1">
+                  {editingProject ? 'Modifica los detalles de la pieza de contenido.' : 'Completa los detalles para crear una nueva pieza de contenido.'}
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div className="lg:col-span-7 space-y-6">
+              <div className="grid grid-cols-1">
+                <div className="space-y-6">
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-                    <form onSubmit={handleSubmit} className="space-y-5">
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                          <div className="md:col-span-2">
+                    <form onSubmit={handleSubmit}>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
+                        {/* Columna Izquierda */}
+                        <div className="space-y-6">
+                          <div className="space-y-3">
+                            <div>
                             <label className="block text-xs font-bold text-slate-700 mb-1">Nombre de la pieza</label>
                             <input type="text" name="title" required value={formData.title} onChange={handleInputChange} placeholder="Ej: Reel Verano - Promoción Zapatos" className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Cliente</label>
+                                <select name="clientId" required value={formData.clientId} onChange={handleClientChange} className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-600">
+                                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Publicación</label>
+                                <input type="date" name="publishDate" required value={formData.publishDate} onChange={handleInputChange} className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-600" />
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Cliente</label>
-                            <select name="clientId" required value={formData.clientId} onChange={handleClientChange} className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-600">
-                              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Fecha de Publicación</label>
-                            <input type="date" name="publishDate" required value={formData.publishDate} onChange={handleInputChange} className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-600" />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">Descripción del video</label>
-                          <textarea name="description" value={formData.description} onChange={handleInputChange} placeholder="Detalles visuales, notas para edición..." rows="3" className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none" />
-                        </div>
-                      </div>
-
                       {/* Objetivo */}
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-2">Objetivo Principal</label>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                          {formClient.config.objectives.slice(0, 3).map(obj => (
-                            <label key={obj} className={`cursor-pointer transition-all flex items-center justify-center text-center p-2 rounded-lg border text-xs ${formData.objective === obj ? 'border-indigo-600 bg-indigo-50 text-indigo-700 font-bold' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>
-                              <input type="radio" name="objective" value={obj} checked={formData.objective === obj} onChange={handleInputChange} className="hidden" />
-                              <span>{obj}</span>
-                            </label>
-                          ))}
+                          {formClient.config.objectives.slice(0, 3).map(obj => {
+                            const colorInfo = OBJECTIVE_COLORS[obj] || OBJECTIVE_COLORS.default;
+                            const isSelected = formData.objective === obj;
+                            return (
+                              <label key={obj} className={`cursor-pointer transition-all flex items-center justify-center text-center p-2 rounded-lg border text-xs font-bold ${isSelected ? colorInfo.styles : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
+                                <input type="radio" name="objective" value={obj} checked={isSelected} onChange={handleInputChange} className="hidden" />
+                                <span>{obj}</span>
+                              </label>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -809,49 +887,89 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Enlaces */}
-                      <div>
-                        <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1">
-                          <LinkIcon size={12} className="text-slate-400" /> Enlace de la Carpeta (Drive)
-                        </label>
-                        <input type="url" name="mediaUrl" required value={formData.mediaUrl} onChange={handleInputChange} placeholder="https://drive.google.com/drive/folders/..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
-                        </div>
 
                       <div>
                         <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-2"><Tag size={12} className="text-slate-400" /> Etiquetas</label>
-                        <div className="flex flex-wrap gap-2">
-                          {formClient.config.tags.map(tag => (
+                        
+                        {/* Selected Tags */}
+                        <div className="flex flex-wrap gap-2 mb-3 min-h-[2.25rem] items-center p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            {formData.tags.length > 0 ? formData.tags.map(tag => (
+                                <span key={tag} className="inline-flex items-center gap-1.5 bg-indigo-600 text-white px-2.5 py-1 rounded-full text-xs font-medium">
+                                    {tag}
+                                    <button type="button" onClick={() => setFormData(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }))} className="text-indigo-200 hover:text-white"><X size={14} /></button>
+                                </span>
+                            )) : <p className="text-xs text-slate-400 italic">Ninguna etiqueta seleccionada.</p>}
+                        </div>
+
+                        {/* Slider of available tags */}
+                        <div className="flex flex-wrap gap-2 pb-2">
+                            {formClient.config.tags
+                                .filter(t => !formData.tags.includes(t))
+                                .map(tag => (
+                                    <button
+                                        key={tag}
+                                        type="button"
+                                        onClick={() => setFormData(prev => ({ ...prev, tags: [...prev.tags, tag] }))}
+                                        className="px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+                                    >
+                                        + {tag}
+                                    </button>
+                            ))}
+                        </div>
+
+                        <div className="flex gap-2 mt-3">
+                          <input 
+                            type="text" 
+                            value={newTag} 
+                            onChange={(e) => setNewTag(e.target.value)} 
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
+                            placeholder="O crear nueva etiqueta..." 
+                            className="flex-1 p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
                             <button
-                              key={tag}
-                              type="button"
-                              onClick={() => setFormData(prev => ({ ...prev, tags: prev.tags.includes(tag) ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag] }))}
-                              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${formData.tags.includes(tag) ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}
-                            >
-                              {tag}
-                            </button>
-                          ))}
+                            type="button" 
+                            onClick={handleAddTag} 
+                            className="bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2"
+                          >
+                            <Plus size={16} /> Crear
+                          </button>
                         </div>
                       </div>
+                        </div>
 
-                      {/* Hashtags & Copy */}
-                      <div className="flex flex-col gap-4 pt-2">
+                        {/* Columna Derecha */}
+                        <div className="space-y-6">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Descripción del video</label>
+                            <textarea name="description" value={formData.description} onChange={handleInputChange} placeholder="Detalles visuales, notas para edición..." rows="3" className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none" />
+                          </div>
+                          <div>
+                            <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1">
+                              <LinkIcon size={12} className="text-slate-400" /> Enlace de la Carpeta (Drive)
+                            </label>
+                            <input type="url" name="mediaUrl" required value={formData.mediaUrl} onChange={handleInputChange} placeholder="https://drive.google.com/drive/folders/..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                          </div>
                         <div>
                           <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><Hash size={12} className="text-slate-400" /> Hashtags</label>
                           <textarea name="hashtags" value={formData.hashtags} onChange={handleInputChange} placeholder="#verano #moda..." rows="2" className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none" />
                         </div>
                         <div>
-                          <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><LayoutTemplate size={12} className="text-slate-400" /> Copy de la publicación</label>
+                          <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><CopyIcon size={12} className="text-slate-400" /> Copy de la publicación</label>
                           <textarea name="copy" value={formData.copy} onChange={handleInputChange} placeholder="Texto que acompañará al post..." rows="4" className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none" />
+                        </div>
                         </div>
                       </div>
 
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <div className="pt-5 mt-6 border-t border-slate-100 flex items-center justify-between">
                         {isSuccess ? (
-                          <div className="flex items-center gap-1 text-green-600 text-xs font-medium"><CheckCircle2 size={16} /> Proyecto creado</div>
+                          <div className="flex items-center gap-1 text-green-600 text-xs font-medium"><CheckCircle2 size={16} /> {editingProject ? 'Cambios guardados' : 'Proyecto creado'}</div>
                         ) : (
                           <span className="text-[10px] text-slate-400">Los datos se guardan localmente.</span>
                         )}
-                        <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm"><Plus size={16} /> Crear</button>
+                        <div className="flex gap-2">
+                          {editingProject && <button type="button" onClick={handleCancelEdit} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition-all">Cancelar</button>}
+                          <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm"><Plus size={16} /> {editingProject ? 'Guardar Cambios' : 'Crear'}</button>
+                        </div>
                       </div>
                     </form>
                   </div>
@@ -874,10 +992,14 @@ export default function App() {
                     <p className="text-sm text-slate-500 mt-1">Navega y revisa todas tus piezas organizadas por formato.</p>
                   </div>
 
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-200 mb-8 gap-4">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 mb-8 gap-4">
                     <div className="flex overflow-x-auto hide-scrollbar gap-6 w-full md:w-auto">
                       {displayFormats.map(format => {
-                        const count = savedProjects.filter(p => p.format === format && (filterClientId === 'all' || p.clientId === filterClientId || role === 'cliente')).length;
+                        const count = savedProjects.filter(p => 
+                          p.format === format && 
+                          (filterClientId === 'all' || p.clientId === filterClientId || role === 'cliente') &&
+                          (filterMonth === 'all' || p.publishDate.startsWith(filterMonth))
+                        ).length;
                         return (
                           <button
                             key={format}
@@ -890,16 +1012,34 @@ export default function App() {
                         );
                       })}
                     </div>
-                    {role === 'admin' && (
+                    <div className="flex items-center gap-2 pb-3">
                       <select 
-                        value={filterClientId} 
-                        onChange={(e) => setFilterClientId(e.target.value)}
-                        className="mb-3 p-2 text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg shadow-sm outline-none hover:bg-slate-100 cursor-pointer transition-colors"
+                        value={filterMonth} 
+                        onChange={(e) => setFilterMonth(e.target.value)}
+                        className="p-2 text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg shadow-sm outline-none hover:bg-slate-100 cursor-pointer transition-colors"
                       >
-                        <option value="all">Ver Todos los Clientes</option>
-                        {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        <option value="all">Ver Todos los Meses</option>
+                        {projectMonths.map(month => {
+                          const [year, monthNum] = month.split('-');
+                          const monthName = new Date(year, monthNum - 1).toLocaleString('es-ES', { month: 'long' });
+                          return (
+                            <option key={month} value={month}>
+                              {`${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${year}`}
+                            </option>
+                          );
+                        })}
                       </select>
-                    )}
+                      {role === 'admin' && (
+                        <select 
+                          value={filterClientId} 
+                          onChange={(e) => setFilterClientId(e.target.value)}
+                          className="p-2 text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg shadow-sm outline-none hover:bg-slate-100 cursor-pointer transition-colors"
+                        >
+                          <option value="all">Ver Todos los Clientes</option>
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      )}
+                    </div>
                   </div>
 
                   {filteredProjects.length === 0 ? (
@@ -933,10 +1073,20 @@ export default function App() {
                               </span>
                             </div>
                           </div>
-                          <div className="p-2 bg-slate-50 border-t border-slate-100">
-                            <button onClick={() => openProjectDetail(project.id)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2">
+                          <div className="p-2 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
+                            <button onClick={() => openProjectDetail(project.id)} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2">
                               <MessageSquare size={14} /> Detalle
                             </button>
+                            {role === 'admin' && (
+                              <>
+                                <button onClick={() => handleEditProject(project.id)} className="p-2 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded-xl transition-all" title="Editar">
+                                  <Edit2 size={14} />
+                                </button>
+                                <button onClick={() => handleRemoveProject(project.id)} className="p-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl transition-all" title="Eliminar">
+                                  <X size={14} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -951,7 +1101,7 @@ export default function App() {
                     {(() => {
                       return (
                     <>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-start md:items-center gap-4">
                         <button onClick={() => setSelectedProjectId(null)} className="p-2 hover:bg-slate-200 bg-slate-100 rounded-full transition-all text-slate-600">
                         <ArrowLeft size={20} />
                       </button>
@@ -978,10 +1128,10 @@ export default function App() {
                               <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{selectedProject.description || "Sin descripción proporcionada."}</p>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
                               <div>
                                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Objetivo</h4>
-                                <span className="inline-block px-3 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-100 w-full truncate text-center">
+                                <span className={`inline-block px-3 py-2 rounded-lg text-xs font-bold border w-full truncate text-center ${OBJECTIVE_COLORS[selectedProject.objective]?.styles || OBJECTIVE_COLORS.default.styles}`}>
                                   {selectedProject.objective || 'Indefinido'}
                                 </span>
                               </div>
@@ -990,18 +1140,6 @@ export default function App() {
                                 <span className="inline-block px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold border border-slate-200 capitalize w-full truncate text-center">
                                   {selectedProject.format || 'Indefinido'}
                                 </span>
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Estado</h4>
-                                <select 
-                                  value={selectedProject.status || 'en_revision'}
-                                  onChange={(e) => handleStatusChange(selectedProject.id, e.target.value)}
-                                  className={`w-full px-2 py-2 rounded-lg text-xs font-bold border outline-none cursor-pointer text-center appearance-none ${STATUSES[selectedProject.status || 'en_revision']?.styles}`}
-                                >
-                                  {Object.entries(STATUSES).map(([key, {label}]) => (
-                                    <option key={key} value={key} className="bg-white text-slate-900 font-medium">{label}</option>
-                                  ))}
-                                </select>
                               </div>
                             </div>
 
@@ -1067,6 +1205,19 @@ export default function App() {
                                 <textarea value={editCopyValue} onChange={(e) => setEditCopyValue(e.target.value)} placeholder="Escribe el copy..." className="w-full text-sm text-slate-700 leading-relaxed bg-white p-4 rounded-xl border-2 border-indigo-200 focus:border-indigo-500 outline-none resize-none min-h-30" autoFocus />
                               )}
                             </div>
+
+                            <div className="pt-6 border-t border-slate-100">
+                              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Estado</h4>
+                              <select 
+                                value={selectedProject.status || 'en_revision'}
+                                onChange={(e) => handleStatusChange(selectedProject.id, e.target.value)}
+                                className={`w-full max-w-xs px-2 py-2 rounded-lg text-xs font-bold border outline-none cursor-pointer text-center appearance-none ${STATUSES[selectedProject.status || 'en_revision']?.styles}`}
+                              >
+                                {Object.entries(STATUSES).map(([key, {label}]) => (
+                                  <option key={key} value={key} className="bg-white text-slate-900 font-medium">{label}</option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1124,7 +1275,7 @@ export default function App() {
                                   <div className="bg-indigo-600 text-white p-3.5 rounded-2xl rounded-tr-sm shadow-sm">
                                     <p className="text-[10px] font-bold uppercase opacity-75 mb-1">{comment.author}</p>
                                     <p className="text-sm">{comment.text}</p>
-                                  </div>
+                                  </div>                                  
                                   <span className="text-[9px] text-slate-400 mt-1.5 mr-1">{comment.date}</span>
                                 </div>
                               </div>
@@ -1162,7 +1313,7 @@ export default function App() {
                 
                 <div className="flex items-center gap-4 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
                   <button onClick={prevMonth} onDragOver={(e) => handleDragOverButton(e, 'prev')} onDragLeave={handleDragLeaveButton} onDrop={handleDragLeaveButton} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"><ChevronLeft size={20} /></button>
-                  <span className="font-bold text-slate-800 min-w-30 text-center">{monthNames[currentMonth]} {currentYear}</span>
+                  <span className="font-bold text-slate-800 min-w-30 text-center">{monthNames[currentMonth]} {currentYear}</span>                  
                   <button onClick={nextMonth} onDragOver={(e) => handleDragOverButton(e, 'next')} onDragLeave={handleDragLeaveButton} onDrop={handleDragLeaveButton} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"><ChevronRight size={20} /></button>
                 </div>
               </div>
@@ -1198,13 +1349,13 @@ export default function App() {
                                 key={project.id}
                                 draggable
                                 onDragStart={(e) => handleDragStart(e, project.id)}
-                                className={`text-left p-1.5 rounded-lg border shadow-sm flex flex-col gap-1.5 cursor-grab active:cursor-grabbing ${STATUSES[project.status || 'en_revision']?.styles}`}
+                                className={`text-left p-1.5 rounded-lg border shadow-sm flex flex-col gap-1.5 cursor-grab active:cursor-grabbing ${STATUSES[project.status || 'en_revision']?.styles} border-l-4 ${OBJECTIVE_COLORS[project.objective]?.calendarBorder || OBJECTIVE_COLORS.default.calendarBorder}`}
                                 title={project.title}
                               >
                                 <button onClick={() => openProjectDetail(project.id)} className="w-full text-left hover:opacity-80 transition-opacity">
                                   <div className="text-[10px] font-bold leading-tight truncate w-full">{project.title}</div>
                                   <div className="flex flex-col w-full gap-0.5 mt-0.5">
-                                    <span className="text-[8px] opacity-80 uppercase tracking-wider truncate w-full text-left">{project.format}</span>
+                                    <span className="text-[8px] opacity-80 uppercase tracking-wider truncate w-full text-left">{project.format}</span>                                    
                                     <span className="text-[7.5px] opacity-60 truncate w-full text-left font-medium">{project.objective}</span>
                                   </div>
                                 </button>
