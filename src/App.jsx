@@ -28,9 +28,8 @@ import {
   Key,
   ExternalLink
 } from 'lucide-react';
-import { auth, storage } from './firebase'; // Importa auth y storage
+import { auth } from './firebase'; // Importa solo auth
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const STATUSES = {
   en_revision: { label: 'En Revisión', styles: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
@@ -80,8 +79,8 @@ const INITIAL_PROJECTS = [
     format: 'Reels/TikTok',
     tags: ['lanzamiento', 'verano', 'moda'],
     hashtags: '#Verano #NuevaColeccion #Moda',
-    mediaUrl: 'https://drive.google.com/drive/folders/1B0_mD1cQLb3s9S3a-i5n_I6QY7g_3fyl?usp=sharing', // Enlace de carpeta de Drive
-    coverUrl: 'https://firebasestorage.googleapis.com/v0/b/feedback-contenido.appspot.com/o/projects%2Fcli_1%2Fcover_example.jpg?alt=media', // URL de Firebase Storage
+    mediaUrl: 'https://drive.google.com/drive/folders/1B0_mD1cQLb3s9S3a-i5n_I6QY7g_3fyl?usp=sharing',
+    coverUrl: '',
     carouselLength: 1,
     carouselUrls: [],
     status: 'en_revision',
@@ -103,10 +102,10 @@ const INITIAL_PROJECTS = [
     format: 'Carrusell',
     tags: ['educativo', 'mitos', 'servicio'],
     hashtags: '#Mitos #Educacion #Servicios',
-    mediaUrl: 'https://drive.google.com/drive/folders/1z2y3x4w5v6u7t8s9r0q1p2o3n4m5l6k?usp=sharing', // Enlace de carpeta de Drive
-    coverUrl: 'https://firebasestorage.googleapis.com/v0/b/feedback-contenido.appspot.com/o/projects%2Fcli_1%2Fcarousel_cover_example.jpg?alt=media', // URL de Firebase Storage
+    mediaUrl: 'https://drive.google.com/drive/folders/1z2y3x4w5v6u7t8s9r0q1p2o3n4m5l6k?usp=sharing',
+    coverUrl: '',
     carouselLength: 2,
-    carouselUrls: ['https://firebasestorage.googleapis.com/v0/b/feedback-contenido.appspot.com/o/projects%2Fcli_1%2Fcarousel_1_example.jpg?alt=media', 'https://firebasestorage.googleapis.com/v0/b/feedback-contenido.appspot.com/o/projects%2Fcli_1%2Fcarousel_2_example.jpg?alt=media'], // URLs de Firebase Storage
+    carouselUrls: [],
     status: 'listo',
     createdAt: new Date().toLocaleDateString(),
     comments: [],
@@ -124,8 +123,8 @@ const INITIAL_PROJECTS = [
     format: 'Story',
     tags: ['oferta', 'urgente'],
     hashtags: '#OfertaFlash #Descuento',
-    mediaUrl: 'https://drive.google.com/drive/folders/17UXr9f5luaThQXCFtb3bDvn_8ljJMx5u?usp=sharing', // Enlace de carpeta de Drive
-    coverUrl: 'https://firebasestorage.googleapis.com/v0/b/feedback-contenido.appspot.com/o/projects%2Fcli_2%2Fstory_cover_example.jpg?alt=media', // URL de Firebase Storage
+    mediaUrl: 'https://drive.google.com/drive/folders/17UXr9f5luaThQXCFtb3bDvn_8ljJMx5u?usp=sharing',
+    coverUrl: '',
     carouselLength: 1,
     carouselUrls: [],
     status: 'en_revision',
@@ -134,29 +133,6 @@ const INITIAL_PROJECTS = [
     pinnedCommentIds: []
   }
 ];
-
-const MediaPreview = ({ linkUrl, imageUrl, placeholderIcon, placeholderText, isVideo = false }) => {
-  let src = null;
-  if (imageUrl instanceof File) {
-    src = URL.createObjectURL(imageUrl);
-  } else if (typeof imageUrl === 'string' && imageUrl) {
-    src = imageUrl;
-  }
-
-  const content = src ? (isVideo ? <video src={src} controls className="w-full h-full object-cover" /> : <img src={src} className="w-full h-full object-cover" alt="Vista previa" />) : (
-      <div className="flex flex-col items-center justify-center p-2 text-center text-slate-400 h-full w-full bg-white">
-        {placeholderIcon}
-        <span className="text-slate-600 text-[8px] md:text-[10px] font-medium break-all mt-1">{placeholderText}</span>
-      </div>
-    );
-
-  return linkUrl && src ? ( // Solo si hay imagen y link, la imagen es clickable
-    <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full relative group">
-      {content}
-      <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Play size={48} className="text-white" /></div>
-    </a>
-  ) : content; // Si no hay link o imagen, solo muestra el contenido (imagen o placeholder)
-};
 
 export default function App() {
   // Estados de autenticación y rol
@@ -188,12 +164,12 @@ export default function App() {
     publishDate: getTodayString(),
     pillars: {},
     format: currentInitialClient.config.formats[0] || '',
-    mediaUrl: '', // Enlace de Drive para el video
-    coverUrl: null, // Archivo de imagen para la portada
+    mediaUrl: '',
+    coverUrl: '',
     tags: [],
     hashtags: '',
     carouselLength: 2,
-    carouselUrls: [null, null] // Archivos de imagen para el carrusel
+    carouselUrls: ['', '']
   });
 
   const [savedProjects, setSavedProjects] = useState(INITIAL_PROJECTS);
@@ -208,7 +184,6 @@ export default function App() {
   const [isEditingCopy, setIsEditingCopy] = useState(false);
   const [editCopyValue, setEditCopyValue] = useState('');
   const [isCopied, setIsCopied] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
 
   // Estados para el calendario
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
@@ -290,55 +265,21 @@ export default function App() {
     }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setIsUploading(true);
-    
-    const uploadFile = async (file, path) => {
-      if (!file || !(file instanceof File)) return file; // Si no es un File, es una URL existente o null, lo devolvemos tal cual
-      const storageRef = ref(storage, path);
-      await uploadBytes(storageRef, file);
-      return await getDownloadURL(storageRef);
-    };
 
-    try {
-      const tempId = generateId();
-      const coverUrl = await uploadFile(formData.coverUrl, `projects/${formData.clientId}/${tempId}/cover_image`);
-
-      let carouselUrls = [];
-      if (formData.format === 'Carrusell') {
-        carouselUrls = await Promise.all(
-          formData.carouselUrls.map((file, idx) =>
-            uploadFile(file, `projects/${formData.clientId}/${tempId}/carousel_${idx}`)
-          )
-        ).filter(Boolean); // Filtra los nulls si algún archivo no se subió
-      }
-
-      const newProjectData = {
+    const newProject = {
+      id: generateId(),
       ...formData,
-      id: tempId,
-      coverUrl,
-      carouselUrls,
       status: 'en_revision',
       createdAt: new Date().toISOString(), // Usar ISO para consistencia
       comments: [],
       pinnedCommentIds: []
     };
     
-      setSavedProjects(prev => [newProjectData, ...prev]);
-      setIsSuccess(true);
-      setTimeout(() => setIsSuccess(false), 3000);
-
-    } catch (error) {
-      console.error("Error al subir archivos: ", error.code, error.message);
-      if (error.code === 'storage/unauthorized') {
-        alert("Error de permisos: No se pueden subir los archivos. Por favor, revisa las reglas de seguridad de Firebase Storage en tu consola de Firebase.");
-      } else {
-        alert("Hubo un error al subir los archivos a Firebase.");
-      }
-    } finally {
-      setIsUploading(false);
-    }
+    setSavedProjects(prev => [newProject, ...prev]);
+    setIsSuccess(true);
+    setTimeout(() => setIsSuccess(false), 3000);
 
     setFormData({
       title: '',
@@ -350,11 +291,11 @@ export default function App() {
       pillars: {},
       format: currentInitialClient.config.formats[0] || '',
       mediaUrl: '',
-      coverUrl: null, // Resetear a null para el input file
+      coverUrl: '',
       tags: [],
       hashtags: '',
       carouselLength: 2,
-      carouselUrls: [null, null]
+      carouselUrls: ['', '']
     });
   };
 
@@ -603,6 +544,7 @@ export default function App() {
     setClients(prev => prev.map(c => c.id === editingClientId ? { ...c, config: { ...c.config, quickLinks: c.config.quickLinks.filter((_, i) => i !== idx) } } : c));
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleCarouselLengthChange = (e) => {
     const length = parseInt(e.target.value, 10) || 1;
     const newUrls = [...formData.carouselUrls];
@@ -636,17 +578,6 @@ export default function App() {
     setIsClientDataSaved(true);
     setTimeout(() => setIsClientDataSaved(false), 2000);
   };
-
-  const handleFileChange = (fieldName, file) => {
-    setFormData(prev => ({ ...prev, [fieldName]: file }));
-  };
-
-  const handleCarouselFileChange = (index, file) => {
-    const newFiles = [...formData.carouselUrls];
-    newFiles[index] = file;
-    setFormData(prev => ({ ...prev, carouselUrls: newFiles }));
-  };
-
   let headerClient = null;
   if (role === 'cliente') {
     headerClient = clients[0]; // Simulación del cliente que ha iniciado sesión
@@ -879,53 +810,12 @@ export default function App() {
                       </div>
 
                       {/* Enlaces */}
-                      {formData.format === 'Carrusell' ? (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                              <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><LinkIcon size={12} className="text-slate-400" /> Enlace de la Carpeta (Drive)</label>
-                              <input type="url" name="mediaUrl" required value={formData.mediaUrl} onChange={handleInputChange} placeholder="https://drive.google.com/drive/folders/..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
-                            </div>
-                            <div>
-                              <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><GalleryHorizontal size={12} className="text-slate-400" /> Cantidad de piezas</label>
-                              <input type="number" min="1" max="10" value={formData.carouselLength} onChange={handleCarouselLengthChange} className="w-24 p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {formData.carouselUrls.map((url, idx) => (
-                              <div key={idx}>
-                                <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><ImageIcon size={12} className="text-slate-400" /> Subir Pieza {idx + 1} (Imagen)</label>
-                                <input type="file" accept="image/*" onChange={e => handleCarouselFileChange(idx, e.target.files[0])} className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
-                              </div>
-                            ))}
-                          </div>
+                      <div>
+                        <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1">
+                          <LinkIcon size={12} className="text-slate-400" /> Enlace de la Carpeta (Drive)
+                        </label>
+                        <input type="url" name="mediaUrl" required value={formData.mediaUrl} onChange={handleInputChange} placeholder="https://drive.google.com/drive/folders/..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                         </div>
-                      ) : formData.format === 'Post' ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><LinkIcon size={12} className="text-slate-400" /> Enlace de la Carpeta (Drive)</label>
-                            <input type="url" name="mediaUrl" value={formData.mediaUrl} onChange={handleInputChange} placeholder="https://drive.google.com/drive/folders/..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
-                          </div>
-                          <div>
-                            <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><ImageIcon size={12} className="text-slate-400" /> Subir Imagen del Post</label>
-                            <input type="file" accept="image/*" required onChange={e => handleFileChange('coverUrl', e.target.files[0])} className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
-                          </div>
-                        </div>
-                      ) : ( // Reels/TikTok & Story
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1"><LinkIcon size={12} className="text-slate-400" /> Enlace de la Carpeta (Drive)</label>
-                            <input type="url" name="mediaUrl" required value={formData.mediaUrl} onChange={handleInputChange} placeholder="https://drive.google.com/drive/folders/..." className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
-                          </div>
-                          <div>
-                            <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-1">
-                              <ImageIcon size={12} className="text-slate-400" /> 
-                              {formData.format === 'Story' ? 'Subir Imagen de la Story' : 'Subir Portada (Imagen)'}
-                            </label>
-                            <input type="file" accept="image/*" onChange={e => handleFileChange('coverUrl', e.target.files[0])} className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
-                          </div>
-                        </div>
-                      )}
 
                       <div>
                         <label className="flex items-center gap-1 text-xs font-bold text-slate-700 mb-2"><Tag size={12} className="text-slate-400" /> Etiquetas</label>
@@ -959,60 +849,14 @@ export default function App() {
                         {isSuccess ? (
                           <div className="flex items-center gap-1 text-green-600 text-xs font-medium"><CheckCircle2 size={16} /> Proyecto creado</div>
                         ) : (
-                          <span className="text-[10px] text-slate-400">{isUploading ? 'Subiendo imágenes...' : 'Las imágenes se subirán a Firebase Storage.'}</span>
+                          <span className="text-[10px] text-slate-400">Los datos se guardan localmente.</span>
                         )}
-                        <button type="submit" disabled={isUploading} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm disabled:bg-indigo-300 disabled:cursor-not-allowed"><Plus size={16} /> {isUploading ? 'Creando...' : 'Crear'}</button>
+                        <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm"><Plus size={16} /> Crear</button>
                       </div>
                     </form>
                   </div>
                 </div>
 
-                <div className="lg:col-span-5 hidden md:block">
-                  <div className="sticky top-8 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col items-center max-h-[calc(100vh-4rem)] overflow-y-auto hide-scrollbar">
-                    <h3 className="text-sm font-bold text-slate-800 mb-6 w-full border-b border-slate-100 pb-2 shrink-0">Vista Previa</h3>
-                    
-                    <div className="w-full flex justify-center">
-                      
-                      {formData.format === 'Reels/TikTok' && (
-                        <div className="relative w-48 aspect-9/16 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"> {/* Vertical */}
-                          <MediaPreview linkUrl={formData.mediaUrl} imageUrl={formData.coverUrl} placeholderIcon={<ImageIcon size={32} />} placeholderText="Sube la portada" />
-                        </div>
-                      )}
-
-                      {formData.format === 'Post' && (
-                        <div className="relative w-full max-w-sm aspect-4/5 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"> {/* 4:5 */}
-                           <MediaPreview linkUrl={formData.mediaUrl} imageUrl={formData.coverUrl} placeholderIcon={<ImageIcon size={32} />} placeholderText="Sube la imagen del post" />
-                        </div>
-                      )}
-
-                      {formData.format === 'Story' && (
-                        <div className="relative w-48 aspect-9/16 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"> {/* Vertical */}
-                          <MediaPreview linkUrl={formData.mediaUrl} imageUrl={formData.coverUrl} placeholderIcon={<ImageIcon size={32} />} placeholderText="Sube la imagen" />
-                        </div>
-                      )}
-
-                      {formData.format === 'Carrusell' && (
-                        <div className="flex flex-col items-center gap-6 w-full">
-                          <div className="relative w-full max-w-lg aspect-video bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"> {/* Horizontal */}
-                            <MediaPreview imageUrl={formData.carouselUrls[0]} placeholderIcon={<GalleryHorizontal size={32} />} placeholderText="Sube la pieza 1" />
-                          </div>
-                          <div className="w-full flex gap-3 overflow-x-auto hide-scrollbar pb-2">
-                            {formData.carouselUrls.slice(1).map((url, idx) => (
-                              <div key={idx} className="flex flex-col items-center gap-1.5 shrink-0">
-                                <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Pieza {idx + 2}</span>
-                                <div className="relative w-24 aspect-4/5 bg-white rounded-lg border-2 border-slate-300 shadow-sm overflow-hidden flex flex-col items-center justify-center transition-all">
-                                  <MediaPreview imageUrl={url} placeholderIcon={<ImageIcon size={16} />} placeholderText={`Pieza ${idx + 2}`} />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      
-                    </div>
-
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -1068,9 +912,6 @@ export default function App() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                       {filteredProjects.map(project => (
                         <div key={project.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md hover:border-indigo-200">
-                          <div className="w-full aspect-video bg-slate-100 relative">
-                            <MediaPreview imageUrl={project.format === 'Carrusell' ? project.carouselUrls?.[0] : project.coverUrl} linkUrl={project.mediaUrl} placeholderIcon={<ImageIcon size={32}/>} placeholderText="Sin Portada" />
-                          </div>
                           <div className="p-3 flex-1 flex flex-col">
                             <div className="flex justify-between items-start mb-2 gap-2">
                               <h3 className="font-bold text-slate-900 text-sm leading-tight line-clamp-2">{project.title}</h3>
@@ -1125,44 +966,10 @@ export default function App() {
                     <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
                       <div className="xl:col-span-7 space-y-6">
                         <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                          <div className="w-full bg-slate-50 p-6 md:p-8 flex flex-col items-center justify-center gap-6 relative overflow-hidden border-b border-slate-200">
-                            
-                            {selectedProject.format === 'Reels/TikTok' && (
-                              <div className="relative w-56 aspect-9/16 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"> {/* Vertical */}
-                                <MediaPreview linkUrl={selectedProject.mediaUrl} imageUrl={selectedProject.coverUrl} placeholderIcon={<ImageIcon size={32} />} placeholderText="Sin Portada" />
-                              </div>
-                            )}
-
-                            {selectedProject.format === 'Post' && (
-                              <div className="relative w-full max-w-sm aspect-4/5 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"> {/* 4:5 */}
-                                <MediaPreview linkUrl={selectedProject.mediaUrl} imageUrl={selectedProject.coverUrl} placeholderIcon={<ImageIcon size={32} />} placeholderText="Sin Imagen" />
-                              </div>
-                            )}
-
-                            {selectedProject.format === 'Story' && (
-                              <div className="relative w-56 aspect-9/16 bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"> {/* Vertical */}
-                                <MediaPreview linkUrl={selectedProject.mediaUrl} imageUrl={selectedProject.coverUrl} placeholderIcon={<ImageIcon size={32} />} placeholderText="Sin Portada" />
-                              </div>
-                            )}
-
-                            {selectedProject.format === 'Carrusell' && (
-                              <div className="flex flex-col items-center gap-6 w-full">
-                                <div className="relative w-full max-w-lg aspect-video bg-white rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center transition-all"> {/* Horizontal */}
-                                  <MediaPreview imageUrl={selectedProject.carouselUrls?.[0]} placeholderIcon={<GalleryHorizontal size={32} />} placeholderText="Sin Pieza 1" />
-                                </div>
-                                <div className="w-full flex gap-3 overflow-x-auto hide-scrollbar pb-2 items-center justify-start md:justify-center">
-                                  {selectedProject.carouselUrls?.slice(1).map((url, idx) => (
-                                    <div key={idx} className="flex flex-col items-center gap-1.5 shrink-0">
-                                      <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Pieza {idx + 2}</span>
-                                      <div className="relative w-32 aspect-4/5 bg-white rounded-lg border-2 border-slate-300 shadow-sm overflow-hidden flex flex-col items-center justify-center transition-all">
-                                        <MediaPreview imageUrl={url} placeholderIcon={<ImageIcon size={16} />} placeholderText={`Pieza ${idx + 2}`} />
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
+                          <div className="w-full bg-slate-50 p-6 md:p-8 flex items-center justify-center gap-6 relative overflow-hidden border-b border-slate-200">
+                            <a href={selectedProject.mediaUrl} target="_blank" rel="noopener noreferrer" className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-full transition-all shadow-lg shadow-indigo-200 flex items-center gap-3 text-sm">
+                              <FolderOpen size={20} /> Abrir Carpeta de Archivos
+                            </a>
                           </div>
 
                           <div className="p-6 md:p-8 space-y-6">
@@ -1387,20 +1194,32 @@ export default function App() {
                         <div className="mt-2 flex flex-col gap-1.5">
                           {dayProjects.map(project => {
                             return (
-                              <button
+                              <div
                                 key={project.id}
                                 draggable
                                 onDragStart={(e) => handleDragStart(e, project.id)}
-                                onClick={() => openProjectDetail(project.id)}
-                                className={`text-left p-1.5 rounded-md border text-[10px] font-bold leading-tight truncate transition-all hover:scale-[1.02] shadow-sm flex flex-col gap-0.5 cursor-grab active:cursor-grabbing ${STATUSES[project.status || 'en_revision']?.styles}`}
+                                className={`text-left p-1.5 rounded-lg border shadow-sm flex flex-col gap-1.5 cursor-grab active:cursor-grabbing ${STATUSES[project.status || 'en_revision']?.styles}`}
                                 title={project.title}
                               >
-                                <div className="truncate w-full">{project.title}</div>
-                                <div className="flex flex-col w-full gap-0.5 mt-0.5">
-                                  <span className="text-[8px] opacity-80 uppercase tracking-wider truncate w-full text-left">{project.format}</span>
-                                  <span className="text-[7.5px] opacity-60 truncate w-full text-left font-medium">{project.objective}</span>
-                                </div>
-                              </button>
+                                <button onClick={() => openProjectDetail(project.id)} className="w-full text-left hover:opacity-80 transition-opacity">
+                                  <div className="text-[10px] font-bold leading-tight truncate w-full">{project.title}</div>
+                                  <div className="flex flex-col w-full gap-0.5 mt-0.5">
+                                    <span className="text-[8px] opacity-80 uppercase tracking-wider truncate w-full text-left">{project.format}</span>
+                                    <span className="text-[7.5px] opacity-60 truncate w-full text-left font-medium">{project.objective}</span>
+                                  </div>
+                                </button>
+                                
+                                <select 
+                                  value={project.status || 'en_revision'}
+                                  onChange={(e) => { e.stopPropagation(); handleStatusChange(project.id, e.target.value); }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className={`w-full rounded-md text-[9px] font-bold border outline-none cursor-pointer appearance-none text-center bg-white/50 border-current/30`}
+                                >
+                                  {Object.entries(STATUSES).map(([key, {label}]) => (
+                                    <option key={key} value={key} className="bg-white text-slate-900 font-medium">{label}</option>
+                                  ))}
+                                </select>
+                              </div>
                             );
                           })}
                         </div>
