@@ -519,8 +519,6 @@ const handlePinComment = async (projectId, commentId) => {
   const nextMonthYear = currentMonth === 11 ? currentYear + 1 : currentYear;
   const nextMonthIndex = currentMonth === 11 ? 0 : currentMonth + 1;
 
-  const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-
   const prevMonth = () => {
     setCurrentMonth(prev => {
       if (prev === 0) { setCurrentYear(y => y - 1); return 11; }
@@ -533,6 +531,11 @@ const handlePinComment = async (projectId, commentId) => {
       if (prev === 11) { setCurrentYear(y => y + 1); return 0; }
       return prev + 1;
     });
+  };
+
+  const goToToday = () => {
+    setCurrentMonth(new Date().getMonth());
+    setCurrentYear(new Date().getFullYear());
   };
 
   const calendarDays = [];
@@ -592,25 +595,6 @@ const handlePinComment = async (projectId, commentId) => {
       setSavedProjects(prev => prev.map(p => 
         p.id === projectId ? { ...p, publishDate: targetDateStr } : p
       ));
-    }
-  };
-
-  const handleDragOverButton = (e, direction) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (!dragTimeoutRef.current) {
-      dragTimeoutRef.current = setTimeout(() => {
-        if (direction === 'prev') prevMonth();
-        if (direction === 'next') nextMonth();
-        dragTimeoutRef.current = null;
-      }, 800);
-    }
-  };
-
-  const handleDragLeaveButton = () => {
-    if (dragTimeoutRef.current) {
-      clearTimeout(dragTimeoutRef.current);
-      dragTimeoutRef.current = null;
     }
   };
 
@@ -702,6 +686,19 @@ const handlePinComment = async (projectId, commentId) => {
     }));
   };
 
+  const handleLogoChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const logoUrl = URL.createObjectURL(file);
+      setClients(prev => prev.map(c => {
+        if (c.id === editingClientId) {
+          return { ...c, config: { ...c.config, logoUrl } };
+        }
+        return c;
+      }));
+    }
+  };
+
   const handleSaveClientData = () => {
     setIsClientDataSaved(true);
     setTimeout(() => setIsClientDataSaved(false), 2000);
@@ -743,8 +740,8 @@ const handlePinComment = async (projectId, commentId) => {
     headerClient = editingClient;
   } else if (currentView === 'crear') {
     headerClient = formClient;
-  } else if (filterClientId !== 'all') {
-    headerClient = clients.find(c => c.id === filterClientId); // En contenido o calendario
+  } else if (filterClientId !== 'all' && (currentView === 'contenido' || currentView === 'calendario')) {
+    headerClient = clients.find(c => c.id === filterClientId);
   }
   const headerConfig = headerClient?.config;
 
@@ -752,38 +749,6 @@ const handlePinComment = async (projectId, commentId) => {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50">
         <p className="text-slate-500">Cargando aplicación...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-100">
-        <div className="w-full max-w-sm p-8 bg-white rounded-2xl shadow-lg border border-slate-200">
-          <h1 className="text-xl font-bold text-center text-slate-800 mb-6">Iniciar Sesión</h1>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Correo Electrónico</label>
-              <input 
-                type="email" 
-                value={loginEmail} 
-                onChange={(e) => setLoginEmail(e.target.value)} 
-                placeholder="tu@correo.com"
-                className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Contraseña</label>
-              <input 
-                type="password" 
-                value={loginPassword} 
-                onChange={(e) => setLoginPassword(e.target.value)} 
-                className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-            </div>
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Entrar</button>
-          </form>
-        </div>
       </div>
     );
   }
@@ -908,9 +873,13 @@ const handlePinComment = async (projectId, commentId) => {
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cliente</span>
                   <span className="text-sm font-bold text-slate-800 leading-tight">{headerClient.name}</span>
                 </div>
-                <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-black text-xs shadow-sm">
-                  {headerClient.name.charAt(0).toUpperCase()}
-                </div>
+                {headerConfig?.logoUrl ? (
+                  <img src={headerConfig.logoUrl} alt="Logo" className="w-8 h-8 rounded-full object-cover shadow-sm" />
+                ) : (
+                  <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-black text-xs shadow-sm">
+                    {headerClient.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1213,11 +1182,7 @@ const handlePinComment = async (projectId, commentId) => {
               ) : (
                 
                 /* --- VISTA DE DETALLE --- */
-                selectedProject && (
-                  <div className="space-y-6 pb-20">
-                    {(() => {
-                      return (
-                    <>
+                selectedProject && <div className="space-y-6 pb-20">
                       <div className="flex items-start md:items-center gap-4">
                         <button onClick={() => setSelectedProjectId(null)} className="p-2 hover:bg-slate-200 bg-slate-100 rounded-full transition-all text-slate-600">
                         <ArrowLeft size={20} />
@@ -1338,102 +1303,113 @@ const handlePinComment = async (projectId, commentId) => {
                           </div>
                         </div>
                       </div>
+                      
+ {/* --- AREA DE CHAT Y REVISIÓN --- */}
+      <div className="xl:col-span-5 h-150 flex flex-col bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden sticky top-8">
+        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+          <MessageSquare size={18} className="text-indigo-600" />
+          <h3 className="font-bold text-slate-800">Panel de Revisión</h3>
+        </div>
 
-                      <div className="xl:col-span-5 h-150 flex flex-col bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden sticky top-8">
-                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-                          <MessageSquare size={18} className="text-indigo-600" />
-                          <h3 className="font-bold text-slate-800">Correcciones y Feedback</h3>
-                        </div>
-                        
-                        {/* Pinned Comment Area */}
-                        <div className="p-4 border-b border-slate-200 bg-yellow-50/50">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Pin size={16} className="text-yellow-700" />
-                            <h4 className="font-bold text-sm text-yellow-800">Correcciones Fijadas ({(selectedProject.pinnedCommentIds || []).length}/3)</h4>
-                          </div>
-                          {(selectedProject.pinnedCommentIds || []).length > 0 ? (
-                            <div className="space-y-2">
-                              {(selectedProject.pinnedCommentIds || []).map(id => {
-                                const pinnedComment = selectedProject.comments?.find(c => c.id === id);
-                                if (!pinnedComment) return null;
-                                return (
-                                  <div key={id} className="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm relative group">
-                                    <button onClick={() => handlePinComment(selectedProject.id, id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14}/></button>
-                                    <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">{pinnedComment.author}</p>
-                                    <p className="text-sm text-slate-800">{pinnedComment.text}</p>
-                                    <span className="text-[9px] text-slate-400 mt-1.5 block text-right">{pinnedComment.date}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-slate-500">No hay correcciones fijadas.</p>
-                          )}
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
-                          {!selectedProject.comments || selectedProject.comments.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                              <MessageSquare size={32} className="mb-2 opacity-50 text-indigo-300" />
-                              <p className="text-sm font-medium">Aún no hay correcciones.</p>
-                              <p className="text-xs mt-1 text-center max-w-50">Ingresa los comentarios solicitados por el cliente aquí abajo.</p>
-                            </div>
-                          ) : (
-                            selectedProject.comments.map(comment => (
-                              <div key={comment.id} className="flex items-start justify-end gap-2">
-                                <button 
-                                  onClick={() => handlePinComment(selectedProject.id, comment.id)}
-                                  className={`p-1.5 rounded-full transition-colors shrink-0 ${(selectedProject.pinnedCommentIds || []).includes(comment.id) ? 'bg-yellow-200 text-yellow-700' : 'text-slate-300 hover:bg-slate-200 hover:text-slate-500'}`}
-                                  title="Fijar corrección"
-                                >
-                                  <Pin size={14} />
-                                </button>
-                                <div className="flex flex-col items-end max-w-[85%]">
-                                  <div className="bg-indigo-600 text-white p-3.5 rounded-2xl rounded-tr-sm shadow-sm">
-                                    <p className="text-[10px] font-bold uppercase opacity-75 mb-1">{comment.author}</p>
-                                    <p className="text-sm">{comment.text}</p>
-                                  </div>                                  
-                                  <span className="text-[9px] text-slate-400 mt-1.5 mr-1">{comment.date}</span>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                        <div className="p-4 bg-white border-t border-slate-200">
-                          <div className="relative flex items-end gap-2">
-                            <textarea value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="Escribe una corrección..." className="w-full p-3 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none min-h-15" />
-                            <button onClick={handleAddComment} className="p-3.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-md shrink-0"><Send size={18} /></button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                      );
-                    })()}
+        {/* Correcciones Fijadas */}
+        <div className="p-4 border-b border-slate-200 bg-yellow-50/50">
+          <div className="flex items-center gap-2 mb-2">
+            <Pin size={16} className="text-yellow-700" />
+            <h4 className="font-bold text-sm text-yellow-800">Cambios Pendientes ({(selectedProject.pinnedCommentIds || []).length}/3)</h4>
+          </div>
+          <div className="space-y-2">
+            {(selectedProject.pinnedCommentIds || []).length > 0 ? (
+              (selectedProject.pinnedCommentIds || []).map(id => {
+                const pinnedComment = selectedProject.comments?.find(c => c.id === id);
+                if (!pinnedComment) return null;
+                return (
+                  <div key={id} className="bg-white p-3 rounded-xl border border-yellow-200 shadow-sm relative group">
+                    <button onClick={() => handlePinComment(selectedProject.id, id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500">
+                      <X size={14}/>
+                    </button>
+                    <p className="text-[10px] font-black uppercase text-yellow-700 mb-1">{pinnedComment.author}</p>
+                    <p className="text-sm text-slate-800">{pinnedComment.text}</p>
                   </div>
-                )
+                );
+              })
+            ) : (
+              <p className="text-xs text-slate-400 italic">No hay tareas fijadas.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Chat */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30">
+          {selectedProject.comments?.map(comment => {
+            const isMe = (role === 'admin' && comment.author === 'Administrador') || (role === 'cliente' && comment.author === 'Cliente');
+            return (
+              <div key={comment.id} className={`flex items-start gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                <button onClick={() => handlePinComment(selectedProject.id, comment.id)} className={`mt-2 p-1.5 rounded-full ${(selectedProject.pinnedCommentIds || []).includes(comment.id) ? 'bg-yellow-400 text-white' : 'text-slate-300'}`}>
+                  <Pin size={12} />
+                </button>
+                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[80%]`}>
+                  <div className={`p-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 border rounded-tl-none'}`}>
+                    <p className="text-[9px] font-black uppercase mb-1 opacity-70">{comment.author}</p>
+                    <p className="text-sm">{comment.text}</p>
+                  </div>                  
+                  <span className="text-[8px] text-slate-400 mt-1">{comment.date}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Input */}
+        <div className="p-4 bg-white border-t border-slate-100">
+          <div className="relative flex items-end gap-2">
+            <textarea value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="Escribe algo..." className="w-full p-3 rounded-2xl bg-slate-100 text-sm outline-none resize-none" />
+            <button onClick={handleAddComment} className="p-3 bg-indigo-600 text-white rounded-xl shadow-md"><Send size={18} /></button>
+          </div>   
+        </div>
+      </div> {/* CIERRA EL CHAT (xl:col-span-5) */}
+    </div> {/* CIERRA EL GRID DE DETALLE (grid-cols-12) */}
+</div>
               )}
             </div>
           </div>
         )}
 
-        {/* --- VISTA: CALENDARIO --- */}
-        {currentView === 'calendario' && (
-          <div className="p-6 md:p-8 lg:p-12 min-h-full">
-            <div className="max-w-7xl mx-auto h-full flex flex-col">
-              
-              <div className="flex justify-between items-center mb-8">
-                <div>
-                  <h1 className="text-2xl font-bold tracking-tight text-slate-900">Calendario de Publicación</h1>
-                  <p className="text-sm text-slate-500 mt-1">Organiza y revisa los estados de tus piezas por mes.</p>
-                </div>
-                
-                <div className="flex items-center gap-4 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
-                  <button onClick={prevMonth} onDragOver={(e) => handleDragOverButton(e, 'prev')} onDragLeave={handleDragLeaveButton} onDrop={handleDragLeaveButton} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"><ChevronLeft size={20} /></button>
-                  <span className="font-bold text-slate-800 min-w-30 text-center">{monthNames[currentMonth]} {currentYear}</span>                  
-                  <button onClick={nextMonth} onDragOver={(e) => handleDragOverButton(e, 'next')} onDragLeave={handleDragLeaveButton} onDrop={handleDragLeaveButton} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"><ChevronRight size={20} /></button>
-                </div>
-              </div>
+{/* --- VISTA: CALENDARIO --- */}
+{currentView === 'calendario' && (
+  <div className="p-6 md:p-8 lg:p-12 min-h-full">
+    <div className="max-w-7xl mx-auto h-full flex flex-col">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Calendario de Publicación</h1>
+          <p className="text-sm text-slate-500 mt-1">Organiza tus piezas por mes y cliente.</p>
+        </div>
+        <div className="flex items-center gap-4">
+          {role === 'admin' && (
+            <select 
+              value={filterClientId} 
+              onChange={(e) => setFilterClientId(e.target.value)}
+              className="p-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg shadow-sm outline-none hover:bg-slate-50 cursor-pointer transition-colors"
+            >
+              <option value="all">Todos los Clientes</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          <div className="flex items-center gap-2">
+            <button onClick={prevMonth} className="p-2 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
+              <ChevronLeft size={18} className="text-slate-600" />
+            </button>
+            <h2 className="font-bold text-slate-800 text-lg capitalize w-48 text-center">
+              {new Date(currentYear, currentMonth).toLocaleString('es-ES', { month: 'long', year: 'numeric' })}
+            </h2>
+            <button onClick={nextMonth} className="p-2 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
+              <ChevronRight size={18} className="text-slate-600" />
+            </button>
+            <button onClick={goToToday} className="ml-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm py-2 px-4 rounded-lg transition-all shadow-sm">
+              Hoy
+            </button>
+          </div>
+        </div>
+      </div>
 
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
                 <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
@@ -1530,6 +1506,27 @@ const handlePinComment = async (projectId, commentId) => {
                     <input type="tel" name="phone" value={editingClient.config.phone} onChange={handleClientDataChange} placeholder="Teléfono" className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                     <input type="text" name="address" value={editingClient.config.address} onChange={handleClientDataChange} placeholder="Dirección física" className="w-full p-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none md:col-span-2" />
                   </div>
+
+                  <div className="mb-4">
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Logo del Cliente</label>
+                    <p className="text-[10px] text-slate-500 mb-3">Sube el logo en formato PNG o JPG. Se mostrará en la cabecera.</p>
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center border-2 border-dashed border-slate-300 overflow-hidden">
+                        {editingClient.config.logoUrl ? (
+                          <img src={editingClient.config.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                        ) : (
+                          <ImageIcon size={24} className="text-slate-400" />
+                        )}
+                      </div>
+                      <div>
+                        <label htmlFor="logo-upload" className="cursor-pointer bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition-all border border-slate-300 shadow-sm">
+                          Subir Logo
+                        </label>
+                        <input id="logo-upload" type="file" accept="image/png, image/jpeg" className="hidden" onChange={handleLogoChange} />
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex justify-end mb-6">
                     <button onClick={handleSaveClientData} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm flex items-center gap-2">
                       {isClientDataSaved ? <><Check size={16}/> Guardado</> : "Guardar Información"}
@@ -1611,82 +1608,47 @@ const handlePinComment = async (projectId, commentId) => {
                 <p className="text-sm text-slate-500 mt-1">Propuesta de arquitectura para administrar múltiples clientes desde una sola plataforma.</p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <div className="lg:col-span-2 space-y-6">
-                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                      <h2 className="font-bold text-slate-800 flex items-center gap-2"><Users size={18} className="text-indigo-600" /> Clientes Activos</h2>
-                      <button onClick={handleAddNewClient} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm">
-                        <Plus size={14} /> Nuevo Cliente
-                      </button>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {clients.length > 0 ? clients.map(client => (
-                        <div key={client.id} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between">
-                          <div className="flex items-center gap-4">
+              <div className="space-y-6">
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <h2 className="font-bold text-slate-800 flex items-center gap-2"><Users size={18} className="text-indigo-600" /> Clientes Activos</h2>
+                    <button onClick={handleAddNewClient} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm">
+                      <Plus size={14} /> Nuevo Cliente
+                    </button>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {clients.length > 0 ? clients.map(client => (
+                      <div key={client.id} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          {client.config.logoUrl ? (
+                            <img src={client.config.logoUrl} alt="Logo" className="w-10 h-10 rounded-full object-cover" />
+                          ) : (
                             <div className="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-black text-sm">
                               {client.name.charAt(0)}
                             </div>
-                            <div>
-                              <h3 className="font-bold text-sm text-slate-800">{client.name}</h3>
-                              <p className="text-xs text-slate-500">{client.email}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">{client.projectsCount} piezas</span>
-                            <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${client.status === 'Activo' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{client.status}</span>
-                            
-                            <div className="flex items-center gap-1 border-l border-slate-200 pl-4 ml-2">
-                              <button onClick={() => { setFilterClientId(client.id); navigateTo('contenido'); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Ver espacio de trabajo">
-                                <ExternalLink size={16}/>
-                              </button>
-                            </div>
+                          )}
+                          <div>
+                            <h3 className="font-bold text-sm text-slate-800">{client.name}</h3>
+                            <p className="text-xs text-slate-500">{client.email}</p>
                           </div>
                         </div>
-                      )) : <p className="p-4 text-sm text-slate-500 text-center">No hay clientes en la base de datos.</p>}
-                    </div>
+                        <div className="flex items-center gap-4">
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">{client.projectsCount} piezas</span>
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${client.status === 'Activo' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{client.status}</span>
+                          
+                          <div className="flex items-center gap-1 border-l border-slate-200 pl-4 ml-2">
+                            <button onClick={() => { setFilterClientId(client.id); navigateTo('contenido'); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Ver espacio de trabajo">
+                              <ExternalLink size={16}/>
+                            </button>
+                            <button onClick={() => { setEditingClientId(client.id); navigateTo('configuracion'); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Editar Cliente">
+                              <Settings size={16}/>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )) : <p className="p-4 text-sm text-slate-500 text-center">No hay clientes en la base de datos.</p>}
                   </div>
                 </div>
-
-                <div className="lg:col-span-1 space-y-6">
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-6 shadow-sm">
-                    <h3 className="font-bold text-indigo-900 mb-4">¿Cómo funcionará el acceso?</h3>
-                    
-                    <div className="space-y-4">
-                      <div className="bg-white p-4 rounded-xl shadow-sm border border-indigo-50">
-                        <h4 className="text-xs font-black text-indigo-700 uppercase tracking-wider mb-2">1. Separación de Datos</h4>
-                        <p className="text-xs text-slate-600 leading-relaxed">
-                          Cada proyecto, comentario y configuración tendrá asignado un <strong><code>cliente_id</code></strong>. Cuando un usuario inicie sesión, la base de datos (ej. Firebase o Supabase) filtrará automáticamente la información.
-                        </p>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-xl shadow-sm border border-indigo-50">
-                        <h4 className="text-xs font-black text-indigo-700 uppercase tracking-wider mb-2">2. Accesos sin contraseña (Magic Links)</h4>
-                        <p className="text-xs text-slate-600 leading-relaxed">
-                          Para facilitar la vida de tus clientes, en lugar de pedirles crear una contraseña, puedes generar un <strong>Enlace Mágico</strong> único. Al hacer clic, el sistema los reconoce y los deja entrar a su espacio.
-                        </p>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-xl shadow-sm border border-indigo-50">
-                        <h4 className="text-xs font-black text-indigo-700 uppercase tracking-wider mb-2">3. Tu vista como Administrador</h4>
-                        <p className="text-xs text-slate-600 leading-relaxed">
-                          Como Admin, tendrás un selector global en tu cabecera para <strong>"Cambiar de Cliente"</strong>. Al seleccionar uno, todo el Gestor de Contenido y Calendario se actualizará para mostrar solo la información de esa marca.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-                    <h3 className="font-bold text-slate-800 mb-2 text-sm">Próximos pasos recomendados:</h3>
-                    <ul className="text-xs text-slate-600 space-y-2 list-disc pl-4">
-                      <li>Migrar el estado local a una base de datos en la nube (ej. Firebase, Supabase).</li>
-                      <li>Implementar autenticación (Auth) para proteger las rutas.</li>
-                      <li>Añadir el campo <code>clienteId</code> a la creación de piezas.</li>
-                    </ul>
-                  </div>
-                </div>
-
               </div>
             </div>
           </div>
