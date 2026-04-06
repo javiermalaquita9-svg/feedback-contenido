@@ -1,16 +1,10 @@
-// Import the functions you need from the SDKs you need
-// Agrega esta importación arriba
-import { getFirestore } from "firebase/firestore";
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
-import { getAuth } from "firebase/auth"; // Importa getAuth para autenticación
-import { getStorage } from "firebase/storage"; // Importa getStorage para el almacenamiento de archivos
+import { getAuth } from "firebase/auth"; 
+import { getStorage } from "firebase/storage";
+// Cambiamos getFirestore por initializeFirestore para poder configurar la estabilidad
+import { initializeFirestore } from "firebase/firestore"; 
 
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBWSv4HmAdcHZCGstlzrzlA8qHXXmU9ig8",
   authDomain: "feedback-contenido.firebaseapp.com",
@@ -21,9 +15,15 @@ const firebaseConfig = {
   measurementId: "G-ZV75Y74W13"
 };
 
-// Initialize Firebase and export services
+// Inicializamos la App
 const app = initializeApp(firebaseConfig);
+
+// Exportamos los servicios con la configuración de estabilidad (Long Polling)
 export const analytics = getAnalytics(app);
-export const auth = getAuth(app); // Exporta la instancia de autenticación
-export const db = getFirestore(app); // Exporta la instancia de Firestore
-export const storage = getStorage(app); // Exporta la instancia de Storage
+export const auth = getAuth(app);
+export const storage = getStorage(app);
+
+// Esta es la línea clave para eliminar el error QUIC y asegurar que los datos se guarden
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});

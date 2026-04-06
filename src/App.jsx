@@ -257,6 +257,25 @@ export default function App() {
       }
     });
 
+    // --- COPIA Y PEGA ESTO DEBAJO DEL USEEFFECT DE PROYECTOS ---
+useEffect(() => {
+  // Creamos la conexión con la colección "clients" en Firebase
+  const unsubscribeClients = onSnapshot(collection(db, "clients"), (snapshot) => {
+    const clientesDesdeFirebase = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data() 
+    }));
+    
+    // Solo si hay datos en Firebase, actualizamos el estado
+    if (clientesDesdeFirebase.length > 0) {
+      setClients(clientesDesdeFirebase);
+    }
+  });
+
+  // Limpiamos la conexión cuando cerramos la app
+  return () => unsubscribeClients();
+}, []);
+
     // Limpiar el listener al desmontar
     return () => unsubscribeProjects();
   }, []);
@@ -673,18 +692,35 @@ const handlePinComment = async (projectId, commentId) => {
   const handleRemoveSocialLink = (idx) => {
     setClients(prev => prev.map(c => c.id === editingClientId ? { ...c, config: { ...c.config, socialLinks: c.config.socialLinks.filter((_, i) => i !== idx) } } : c));
   };
-  const handleClientDataChange = (e) => {
-    const { name, value } = e.target;
-    setClients(prev => prev.map(c => {
-      if (c.id === editingClientId) {
-        if (name === 'name' || name === 'email') {
-          return { ...c, [name]: value };
-        }
-        return { ...c, config: { ...c.config, [name]: value } };
-      }
-      return c;
-    }));
-  };
+  // --- REEMPLAZALO POR ESTO ---
+const handleClientDataChange = async (e) => {
+  const { name, value } = e.target;
+  
+  // 1. Buscamos al cliente que estamos editando actualmente
+  const currentClient = clients.find(c => c.id === editingClientId);
+  if (!currentClient) return;
+
+  // 2. Preparamos los nuevos datos
+  let updatedClient;
+  if (name === 'name' || name === 'email') {
+    updatedClient = { ...currentClient, [name]: value };
+  } else {
+    updatedClient = { ...currentClient, config: { ...currentClient.config, [name]: value } };
+  }
+
+  // 3. Actualizamos la pantalla (React)
+  setClients(prev => prev.map(c => c.id === editingClientId ? updatedClient : c));
+
+  // 4. GUARDADO REAL EN FIREBASE
+  try {
+    const clientRef = doc(db, "clients", editingClientId);
+    await updateDoc(clientRef, updatedClient); 
+    console.log("Sincronizado con Firebase");
+  } catch (error) {
+    // Si falla el updateDoc (porque el documento no existe aún), usamos setDoc
+    await setDoc(doc(db, "clients", editingClientId), updatedClient);
+  }
+};
 
   const handleLogoChange = (e) => {
     const file = e.target.files[0];
@@ -704,28 +740,35 @@ const handlePinComment = async (projectId, commentId) => {
     setTimeout(() => setIsClientDataSaved(false), 2000);
   };
 
-  const handleAddNewClient = () => {
-    const maxId = clients.reduce((max, c) => {
-      const idNum = parseInt(c.id.split('_')[1]);
-      return idNum > max ? idNum : max;
-    }, 0);
+ const handleAddNewClient = async () => {
+  const maxId = clients.length > 0 ? clients.reduce((max, c) => {
+    const idNum = parseInt(c.id.split('_')[1] || 0);
+    return idNum > max ? idNum : max;
+  }, 0) : 0;
 
-    const newClientId = `cli_${maxId + 1}`;
-    
-    const newClient = {
-      id: newClientId,
-      name: `Nuevo Cliente ${maxId + 1}`,
-      email: `cliente${maxId + 1}@example.com`,
-      status: 'Inactivo',
-      projectsCount: 0,
-      config: { ...DEFAULT_CONFIG }
-    };
-
-    setClients(prevClients => [...prevClients, newClient]);
-    setEditingClientId(newClientId); // Set the new client as the one being edited
-    navigateTo('configuracion'); // Navigate to the configuration view for the new client
+  const newClientId = `cli_${maxId + 1}`;
+  
+  const newClient = {
+    id: newClientId,
+    name: `Nuevo Cliente ${maxId + 1}`,
+    email: `cliente${maxId + 1}@example.com`,
+    status: 'Inactivo',
+    projectsCount: 0,
+    config: { ...DEFAULT_CONFIG }
   };
 
+  try {
+    // 🚀 ESTO ES LO QUE FALTA: Guardar en Firestore
+    await setDoc(doc(db, "clients", newClientId), newClient);
+    
+    // El onSnapshot que agregamos antes se encargará de actualizar la lista sola
+    setEditingClientId(newClientId); 
+    navigateTo('configuracion');
+  } catch (error) {
+    console.error("Error al crear cliente:", error);
+    alert("Hubo un problema con Firebase. Revisa las reglas de seguridad.");
+  }
+};
   const handleCancelEdit = () => {
     setEditingProject(null);
     resetForm();
