@@ -212,72 +212,61 @@ export default function App() {
   
   // Estado para el drag & drop
   const [dragOverDate, setDragOverDate] = useState(null);
-  const dragTimeoutRef = useRef(null);
 
-  // --- Efecto para escuchar el estado de autenticación ---
+// 1. Efecto de Autenticación (Independiente)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // Asigna el rol y filtra por cliente si no es admin
-        if (currentUser.email === 'wong.luiggi@gmail.com') { // <-- ¡IMPORTANTE! Cambia esto por tu email de administrador
+        if (currentUser.email === 'wong.luiggi@gmail.com') {
           setRole('admin');
-          setFilterClientId('all'); // El admin ve todo por defecto
+          setFilterClientId('all');
         } else {
           setRole('cliente');
           const clientData = clients.find(c => c.email === currentUser.email);
           if (clientData) {
-            setFilterClientId(clientData.id); // Filtra para mostrar solo los datos de este cliente
+            setFilterClientId(clientData.id);
           } else {
-            setFilterClientId(null); // Si no se encuentra el cliente, no muestra nada
+            setFilterClientId(null);
           }
-          setCurrentView('contenido'); // Asegura que el cliente siempre empiece en la vista de contenido
+          setCurrentView('contenido');
         }
       } else {
-        // Limpia el estado al cerrar sesión
         setRole(null);
         setFilterClientId('all');
       }
       setAuthLoading(false);
     });
 
-    // Limpiar el listener al desmontar el componente
     return () => unsubscribe();
-  }, [clients]); // Se añade `clients` como dependencia para que se re-evalúe si cambian los clientes
+  }, [clients]); 
 
-// --- Efecto para traer piezas en TIEMPO REAL desde Firebase ---
+  // 2. Efecto de Proyectos (Independiente)
   useEffect(() => {
-    // Escucha la colección "projects" en tu base de datos
     const unsubscribeProjects = onSnapshot(collection(db, "projects"), (snapshot) => {
       const proyectosFirebase = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Si hay datos en Firebase, los usamos. Si está vacío, no hace nada y espera.
       if (proyectosFirebase.length > 0) {
         setSavedProjects(proyectosFirebase);
       }
     });
 
-    // --- COPIA Y PEGA ESTO DEBAJO DEL USEEFFECT DE PROYECTOS ---
-useEffect(() => {
-  // Creamos la conexión con la colección "clients" en Firebase
-  const unsubscribeClients = onSnapshot(collection(db, "clients"), (snapshot) => {
-    const clientesDesdeFirebase = snapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data() 
-    }));
-    
-    // Solo si hay datos en Firebase, actualizamos el estado
-    if (clientesDesdeFirebase.length > 0) {
-      setClients(clientesDesdeFirebase);
-    }
-  });
-
-  // Limpiamos la conexión cuando cerramos la app
-  return () => unsubscribeClients();
-}, []);
-
-    // Limpiar el listener al desmontar
     return () => unsubscribeProjects();
+  }, []);
+
+  // 3. Efecto de Clientes (Independiente)
+  useEffect(() => {
+    const unsubscribeClients = onSnapshot(collection(db, "clients"), (snapshot) => {
+      const clientesDesdeFirebase = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      }));
+      
+      if (clientesDesdeFirebase.length > 0) {
+        setClients(clientesDesdeFirebase);
+      }
+    });
+
+    return () => unsubscribeClients();
   }, []);
 
   const handleLogin = async (e) => {
@@ -717,9 +706,8 @@ const handleClientDataChange = async (e) => {
     await updateDoc(clientRef, updatedClient); 
     console.log("Sincronizado con Firebase");
   } catch (error) {
-    // Si falla el updateDoc (porque el documento no existe aún), usamos setDoc
-    await setDoc(doc(db, "clients", editingClientId), updatedClient);
-  }
+  console.error("Error al sincronizar con Firebase:", error);
+}
 };
 
   const handleLogoChange = (e) => {
